@@ -1,0 +1,11 @@
+{
+  "appName": "Family Tree",
+  "documentTitle": "Family Tree — Your story starts here",
+  "language": "Language",
+  "englishShort": "EN",
+  "polishShort": "PL",
+  "welcomeTitle": "Your family story starts here",
+  "welcomeDescription": "Import a file or start a new tree. Your data stays in your browser.",
+  "startTree": "Start a new tree",
+  "importFile": "Import a file"
+}

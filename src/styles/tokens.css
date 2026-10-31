@@ -1,0 +1,20 @@
+:root {
+  --cream: #f7f4ed;
+  --charcoal: #1c1c1c;
+  --offwhite: #fcfbf8;
+  --muted: #5f5f5d;
+  --border: #eceae4;
+  --border-strong: rgba(28, 28, 28, 0.4);
+  --tint-hover: rgba(28, 28, 28, 0.04);
+  --tint-faint: rgba(28, 28, 28, 0.03);
+  --line: rgba(28, 28, 28, 0.4);
+  --ring: rgba(59, 130, 246, 0.5);
+  --shadow-focus: rgba(0, 0, 0, 0.1) 0 4px 12px;
+  --shadow-inset:
+    rgba(255, 255, 255, 0.2) 0 0.5px 0 0 inset,
+    rgba(0, 0, 0, 0.2) 0 0 0 0.5px inset, rgba(0, 0, 0, 0.05) 0 1px 2px 0;
+  --radius-control: 6px;
+  --radius-card: 12px;
+  --radius-panel: 16px;
+  --radius-pill: 9999px;
+}

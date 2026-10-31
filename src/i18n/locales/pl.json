@@ -1,0 +1,11 @@
+{
+  "appName": "Drzewo rodzinne",
+  "documentTitle": "Drzewo rodzinne — historia zaczyna się tutaj",
+  "language": "Język",
+  "englishShort": "EN",
+  "polishShort": "PL",
+  "welcomeTitle": "Tu zaczyna się historia Twojej rodziny",
+  "welcomeDescription": "Zaimportuj plik lub zacznij nowe drzewo. Twoje dane zostają w Twojej przeglądarce.",
+  "startTree": "Zacznij nowe drzewo",
+  "importFile": "Importuj plik"
+}
