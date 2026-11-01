@@ -90,6 +90,22 @@ Rules:
 - `getDisplayName(person)` is the single helper for building a person's displayed name.
 - Always include `version`. When the schema changes, add a migration function from the previous version.
 
+Relationship helpers in `src/model/` define:
+- Parents: people with a `child` edge pointing to the person.
+- Children: people the person points to with a `child` edge.
+- Partners: people connected by a `marriage` edge.
+- Co-parents: people who share at least one child, whether or not they are partners.
+- Siblings: people connected by a `sibling` edge or who share at least one parent, without duplicates.
+- A person can have at most two parents. Model operations reject additions that would create a third parent. Imported trees may predate this rule; treat two or more existing parents as the limit when offering connections.
+
+### Smart connections when adding relatives
+Ask only when there is something to ask, and pre-select the likely answer. Keep question generation and applying answers in pure model functions; recompute defaults each time the form opens.
+- Adding a partner asks independently whether each eligible child should also be the new partner's child; these options default checked.
+- Adding a child asks about the other parent: no question for zero candidates, a checked checkbox for one, or an unselected choice list (including "No other parent") for multiple candidates.
+- Adding a sibling asks about each existing parent and sibling; options default checked so users can make half-siblings by unchecking.
+- Adding a parent asks about eligible siblings (checked by default) and, when there is one existing parent, whether to connect them as a couple. The couple option defaults checked only if that parent has no partners.
+- A child already having two parents cannot receive another parent edge. Apply the primary relationship and all selected extra relationships atomically, in deterministic question order.
+
 ## 6. Core Features (v1 scope)
 
 In scope:

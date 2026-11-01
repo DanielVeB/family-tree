@@ -101,6 +101,74 @@ describe('computeLayout', () => {
     expect(layout.edgePaths).toHaveLength(2)
   })
 
+  it('lays out a couple and three shared children without overlap', () => {
+    const ids = ['anna', 'piotr', 'mia', 'olek', 'zosia']
+    const edges = [
+      { from: 'anna', to: 'piotr', type: 'marriage' as const },
+      ...['mia', 'olek', 'zosia'].flatMap((childId) => [
+        { from: 'anna', to: childId, type: 'child' as const },
+        { from: 'piotr', to: childId, type: 'child' as const },
+      ]),
+    ]
+    const layout = computeLayout(tree(ids, edges))
+
+    expect(layout.positions.anna!.y).toBe(layout.positions.piotr!.y)
+    for (const childId of ids.slice(2)) {
+      expect(layout.positions[childId]!.y).toBeGreaterThan(
+        layout.positions.anna!.y,
+      )
+    }
+    expectNoOverlaps(layout, ids)
+    expect(layout.edgePaths.every(({ path }) => path.length > 0)).toBe(true)
+  })
+
+  it('keeps half-siblings attached below their respective parents', () => {
+    const ids = ['anna', 'piotr', 'marek', 'mia', 'olek']
+    const layout = computeLayout(
+      tree(ids, [
+        { from: 'anna', to: 'piotr', type: 'marriage' },
+        { from: 'anna', to: 'marek', type: 'marriage' },
+        { from: 'anna', to: 'mia', type: 'child' },
+        { from: 'piotr', to: 'mia', type: 'child' },
+        { from: 'anna', to: 'olek', type: 'child' },
+        { from: 'marek', to: 'olek', type: 'child' },
+      ]),
+    )
+    expect(layout.positions.anna!.y).toBe(layout.positions.piotr!.y)
+    expect(layout.positions.piotr!.y).toBe(layout.positions.marek!.y)
+    expect(layout.positions.mia!.y).toBe(layout.positions.olek!.y)
+    expect(layout.positions.mia!.x).not.toBe(layout.positions.olek!.x)
+    expectNoOverlaps(layout, ids)
+    expect(layout.edgePaths.every(({ path }) => path.length > 0)).toBe(true)
+  })
+
+  it('places children below two parents even when the parents are not partners', () => {
+    const layout = computeLayout(
+      tree(
+        ['anna', 'tomek', 'mia'],
+        [
+          { from: 'anna', to: 'mia', type: 'child' },
+          { from: 'tomek', to: 'mia', type: 'child' },
+        ],
+      ),
+    )
+    expect(layout.positions.mia!.y).toBeGreaterThan(layout.positions.anna!.y)
+    expect(layout.positions.mia!.y).toBeGreaterThan(layout.positions.tomek!.y)
+    expectNoOverlaps(layout, ['anna', 'tomek', 'mia'])
+  })
+
+  it('handles a tree of 30 people without card overlap', () => {
+    const ids = Array.from({ length: 30 }, (_, index) => `person-${index}`)
+    const edges = ids.slice(1).map((id, index) => ({
+      from: ids[index]!,
+      to: id,
+      type: 'child' as const,
+    }))
+    const layout = computeLayout(tree(ids, edges))
+    expect(Object.keys(layout.positions)).toHaveLength(30)
+    expectNoOverlaps(layout, ids)
+  })
+
   it('does not overlap cards and leaves node order stable when a person is added', () => {
     const initial = computeLayout(tree(['a', 'b', 'c']))
     const extended = computeLayout(tree(['a', 'b', 'c', 'd']))
@@ -111,3 +179,23 @@ describe('computeLayout', () => {
     expect(new Set(xPositions).size).toBe(xPositions.length)
   })
 })
+
+function expectNoOverlaps(
+  layout: ReturnType<typeof computeLayout>,
+  ids: string[],
+  width = 200,
+  height = 88,
+) {
+  for (let first = 0; first < ids.length; first += 1) {
+    for (let second = first + 1; second < ids.length; second += 1) {
+      const a = layout.positions[ids[first]!]!
+      const b = layout.positions[ids[second]!]!
+      const overlaps =
+        a.x < b.x + width &&
+        a.x + width > b.x &&
+        a.y < b.y + height &&
+        a.y + height > b.y
+      expect(overlaps, `${ids[first]} overlaps ${ids[second]}`).toBe(false)
+    }
+  }
+}

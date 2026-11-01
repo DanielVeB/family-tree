@@ -11,13 +11,23 @@ import {
 import { useTranslation } from 'react-i18next'
 import { computeLayout, type Point } from '../layout/computeLayout'
 import {
+  getChildrenOf,
+  getConnectionQuestions,
+  getDefaultConnectionAnswers,
   getDisplayName,
+  getParentCount,
+  getParentsOf,
+  getPartnersOf,
+  getSiblingsOf,
+  TreeOperationError,
   type FamilyTree,
+  type ConnectionAnswers,
+  type ConnectionQuestionGroup,
   type PersonName,
   type PersonNode,
+  type RelativeKind,
 } from '../model/tree'
 
-type RelativeKind = 'parent' | 'child' | 'sibling' | 'partner'
 interface TreeViewProps {
   tree: FamilyTree
   selectedId: string | null
@@ -26,6 +36,7 @@ interface TreeViewProps {
     selectedId: string,
     relation: RelativeKind,
     name: PersonName,
+    answers: ConnectionAnswers,
   ) => void
 }
 
@@ -79,11 +90,25 @@ export default function TreeView({
   const [formErrorField, setFormErrorField] = useState<
     'firstName' | 'lastName' | null
   >(null)
+  const [connectionAnswers, setConnectionAnswers] = useState<ConnectionAnswers>(
+    { checked: {}, choice: null },
+  )
+  const [connectionError, setConnectionError] = useState(false)
+  const connectionChoiceRef = useRef<HTMLInputElement>(null)
   const relativeFirstNameRef = useRef<HTMLInputElement>(null)
   const formWasOpenRef = useRef(false)
 
   const selectedPerson = tree.nodes.find((node) => node.id === selectedId)
   const selectedName = selectedPerson ? getDisplayName(selectedPerson) : ''
+  const connectionQuestions = useMemo(
+    () =>
+      selectedId && relativeForm
+        ? getConnectionQuestions(tree, selectedId, relativeForm)
+        : [],
+    [tree, selectedId, relativeForm],
+  )
+  const selectedHasTwoParents =
+    selectedId !== null && getParentCount(tree, selectedId) >= 2
 
   const fitToScreen = useCallback(() => {
     const canvas = canvasRef.current
@@ -180,6 +205,8 @@ export default function TreeView({
         setFormErrorField(null)
         setFirstName('')
         setLastName('')
+        setConnectionAnswers({ checked: {}, choice: null })
+        setConnectionError(false)
         return
       }
       if (selectedId) closeDetail()
@@ -208,15 +235,55 @@ export default function TreeView({
       return
     }
     if (!selectedId || !relativeForm) return
-    onAddRelative(selectedId, relativeForm, {
-      firstName: trimmedFirstName,
-      lastName: lastName.trim(),
-    })
+    if (
+      connectionQuestions.some((question) => question.kind === 'choice') &&
+      connectionAnswers.choice === null
+    ) {
+      setConnectionError(true)
+      connectionChoiceRef.current?.focus()
+      return
+    }
+    try {
+      onAddRelative(
+        selectedId,
+        relativeForm,
+        {
+          firstName: trimmedFirstName,
+          lastName: lastName.trim(),
+        },
+        connectionAnswers,
+      )
+    } catch (error) {
+      if (!(error instanceof TreeOperationError)) throw error
+      if (error.code === 'missingConnectionChoice') {
+        setConnectionError(true)
+        connectionChoiceRef.current?.focus()
+      } else {
+        setFormError(error.code)
+      }
+      return
+    }
     setFirstName('')
     setLastName('')
     setFormError('')
     setFormErrorField(null)
+    setConnectionError(false)
+    setConnectionAnswers({ checked: {}, choice: null })
     setRelativeForm(null)
+  }
+
+  function openRelativeForm(kind: RelativeKind) {
+    if (kind === 'parent' && selectedHasTwoParents) return
+    const questions = selectedId
+      ? getConnectionQuestions(tree, selectedId, kind)
+      : []
+    setConnectionAnswers(getDefaultConnectionAnswers(questions))
+    setConnectionError(false)
+    setFormError('')
+    setFormErrorField(null)
+    setFirstName('')
+    setLastName('')
+    setRelativeForm(kind)
   }
 
   const pointerPosition = (event: ReactPointerEvent<HTMLDivElement>) => ({
@@ -451,6 +518,18 @@ export default function TreeView({
               lastName={lastName}
               error={formError}
               errorField={formErrorField}
+              tree={tree}
+              questions={connectionQuestions}
+              answers={connectionAnswers}
+              connectionError={connectionError}
+              choiceRef={connectionChoiceRef}
+              onAnswers={(answers) => {
+                setConnectionAnswers(answers)
+                setConnectionError(
+                  answers.choice === null ? connectionError : false,
+                )
+                setFormError('')
+              }}
               firstNameRef={relativeFirstNameRef}
               onFirstName={(value) => {
                 setFirstName(value)
@@ -469,6 +548,8 @@ export default function TreeView({
                 setLastName('')
                 setFormError('')
                 setFormErrorField(null)
+                setConnectionAnswers({ checked: {}, choice: null })
+                setConnectionError(false)
               }}
             />
           ) : (
@@ -482,18 +563,26 @@ export default function TreeView({
                     className="button button--ghost"
                     type="button"
                     key={kind}
-                    onClick={() => {
-                      setFirstName('')
-                      setLastName('')
-                      setFormError('')
-                      setFormErrorField(null)
-                      setRelativeForm(kind)
-                    }}
+                    disabled={kind === 'parent' && selectedHasTwoParents}
+                    aria-describedby={
+                      kind === 'parent' && selectedHasTwoParents
+                        ? 'relative-parent-limit'
+                        : undefined
+                    }
+                    onClick={() => openRelativeForm(kind)}
                   >
                     {t(label)}
                   </button>
                 ))}
               </div>
+              {selectedHasTwoParents && (
+                <span
+                  className="relative-action-hint"
+                  id="relative-parent-limit"
+                >
+                  {t('relativeParentDisabled', { name: selectedName })}
+                </span>
+              )}
             </>
           )}
         </aside>
@@ -541,23 +630,11 @@ function PersonCard({
 
 function Relations({ tree, person }: { tree: FamilyTree; person: PersonNode }) {
   const { t } = useTranslation()
-  const relations: Record<(typeof relationGroups)[number]['type'], string[]> = {
-    parents: [],
-    children: [],
-    siblings: [],
-    partners: [],
-  }
-  for (const edge of tree.edges) {
-    if (edge.type === 'child') {
-      if (edge.to === person.id) relations.parents.push(edge.from)
-      if (edge.from === person.id) relations.children.push(edge.to)
-    } else if (edge.type === 'sibling') {
-      if (edge.from === person.id) relations.siblings.push(edge.to)
-      if (edge.to === person.id) relations.siblings.push(edge.from)
-    } else {
-      if (edge.from === person.id) relations.partners.push(edge.to)
-      if (edge.to === person.id) relations.partners.push(edge.from)
-    }
+  const relations = {
+    parents: getParentsOf(tree, person.id),
+    children: getChildrenOf(tree, person.id),
+    siblings: getSiblingsOf(tree, person.id),
+    partners: getPartnersOf(tree, person.id),
   }
   return (
     <div className="relations">
@@ -589,6 +666,12 @@ function RelativeForm({
   lastName,
   error,
   errorField,
+  tree,
+  questions,
+  answers,
+  connectionError,
+  choiceRef,
+  onAnswers,
   firstNameRef,
   onFirstName,
   onLastName,
@@ -601,6 +684,12 @@ function RelativeForm({
   lastName: string
   error: string
   errorField: 'firstName' | 'lastName' | null
+  tree: FamilyTree
+  questions: ConnectionQuestionGroup[]
+  answers: ConnectionAnswers
+  connectionError: boolean
+  choiceRef: React.RefObject<HTMLInputElement | null>
+  onAnswers: (answers: ConnectionAnswers) => void
   firstNameRef: React.RefObject<HTMLInputElement | null>
   onFirstName: (value: string) => void
   onLastName: (value: string) => void
@@ -619,7 +708,7 @@ function RelativeForm({
       <h2 className="detail-panel__form-title">
         {t('addTo', { relation: relationTranslation[relation], name })}
       </h2>
-      <form onSubmit={onSubmit} noValidate>
+      <form className="relative-form" onSubmit={onSubmit} noValidate>
         <div className="field">
           <label htmlFor="relative-first-name">{t('firstName')}</label>
           <input
@@ -671,6 +760,22 @@ function RelativeForm({
             </span>
           )}
         </div>
+        <ConnectionQuestions
+          groups={questions}
+          tree={tree}
+          targetName={name}
+          answers={answers}
+          error={connectionError}
+          choiceRef={choiceRef}
+          onAnswers={onAnswers}
+        />
+        {error && errorField === null && (
+          <p className="field__error" role="alert">
+            {error === 'tooManyParents'
+              ? t('connectTooManyParents')
+              : t('connectSaveError')}
+          </p>
+        )}
         <div className="form-actions">
           <button className="button button--primary" type="submit">
             {t('save')}
@@ -685,6 +790,198 @@ function RelativeForm({
         </div>
       </form>
     </>
+  )
+}
+
+function ConnectionQuestions({
+  groups,
+  tree,
+  targetName,
+  answers,
+  error,
+  choiceRef,
+  onAnswers,
+}: {
+  groups: ConnectionQuestionGroup[]
+  tree: FamilyTree
+  targetName: string
+  answers: ConnectionAnswers
+  error: boolean
+  choiceRef: React.RefObject<HTMLInputElement | null>
+  onAnswers: (answers: ConnectionAnswers) => void
+}) {
+  const { t } = useTranslation()
+  if (!groups.length) return null
+
+  const getName = (personId: string) => {
+    const person = tree.nodes.find((node) => node.id === personId)
+    return person ? getDisplayName(person) : ''
+  }
+  const coupleParentId = groups.find((group) => group.id === 'parentCouple')
+    ?.items[0]?.personId
+  const legends: Record<ConnectionQuestionGroup['id'], string> = {
+    partnerChildren: t('connectPartnerLegend', { name: targetName }),
+    childOtherParent: t('connectChildLegend'),
+    siblingParents: t('connectSiblingParentsLegend', { name: targetName }),
+    siblingSiblings: t('connectSiblingsLegend', { name: targetName }),
+    parentSiblings: t('connectSiblingsLegend', { name: targetName }),
+    parentCouple: t('connectParentCoupleLegend', {
+      parent: coupleParentId ? getName(coupleParentId) : '',
+    }),
+  }
+  const getItemLabel = (group: ConnectionQuestionGroup, personId: string) => {
+    const personName = getName(personId)
+    switch (group.id) {
+      case 'partnerChildren':
+        return t('connectPartnerItem', { child: personName })
+      case 'childOtherParent':
+      case 'siblingParents':
+        return t('connectAlsoChildOf', { parent: personName })
+      case 'siblingSiblings':
+        return t('connectAlsoSiblingOf', { name: personName })
+      case 'parentSiblings':
+        return t('connectParentSiblingItem', { name: personName })
+      case 'parentCouple':
+        return t('connectParentCouple', { parent: personName })
+    }
+  }
+
+  return (
+    <div className="connection-questions">
+      {groups.map((group) => {
+        const enabledItems = group.items.filter((item) => !item.disabledReason)
+        const selectAllAvailable =
+          group.kind === 'checkboxes' && enabledItems.length >= 4
+        const allSelected =
+          selectAllAvailable &&
+          enabledItems.every(
+            (item) => answers.checked[`${group.id}:${item.personId}`],
+          )
+        return (
+          <fieldset
+            className="connection-group"
+            key={group.id}
+            aria-describedby={
+              error && group.kind === 'choice'
+                ? `connection-${group.id}-error`
+                : undefined
+            }
+          >
+            <legend>{legends[group.id]}</legend>
+            {selectAllAvailable && (
+              <button
+                className="button button--ghost connection-select-all"
+                type="button"
+                onClick={() => {
+                  const checked = { ...answers.checked }
+                  for (const item of enabledItems) {
+                    checked[`${group.id}:${item.personId}`] = !allSelected
+                  }
+                  onAnswers({ ...answers, checked })
+                }}
+              >
+                {allSelected ? t('connectClearAll') : t('connectSelectAll')}
+              </button>
+            )}
+            <div className="connection-items">
+              {group.items.map((item, index) => {
+                const personName = getName(item.personId)
+                const controlId = `connection-${group.id}-${index}`
+                const disabledId = `${controlId}-disabled`
+                const label = getItemLabel(group, item.personId)
+                return (
+                  <label
+                    className={`connection-item${item.disabledReason ? ' connection-item--disabled' : ''}`}
+                    htmlFor={controlId}
+                    key={`${group.id}:${item.personId}`}
+                  >
+                    {group.kind === 'choice' ? (
+                      <input
+                        ref={index === 0 ? choiceRef : undefined}
+                        id={controlId}
+                        type="radio"
+                        name="other-parent-choice"
+                        value={item.personId}
+                        checked={answers.choice === item.personId}
+                        disabled={Boolean(item.disabledReason)}
+                        aria-describedby={
+                          item.disabledReason ? disabledId : undefined
+                        }
+                        aria-invalid={error}
+                        onChange={() => {
+                          onAnswers({ ...answers, choice: item.personId })
+                        }}
+                      />
+                    ) : (
+                      <input
+                        id={controlId}
+                        type="checkbox"
+                        checked={
+                          answers.checked[`${group.id}:${item.personId}`] ??
+                          item.defaultChecked
+                        }
+                        disabled={Boolean(item.disabledReason)}
+                        aria-describedby={
+                          item.disabledReason ? disabledId : undefined
+                        }
+                        onChange={(event) => {
+                          onAnswers({
+                            ...answers,
+                            checked: {
+                              ...answers.checked,
+                              [`${group.id}:${item.personId}`]:
+                                event.target.checked,
+                            },
+                          })
+                        }}
+                      />
+                    )}
+                    <span className="connection-item__copy">
+                      <span>
+                        {group.kind === 'choice' ? personName : label}
+                      </span>
+                      {item.disabledReason && (
+                        <span className="connection-item__note" id={disabledId}>
+                          {t('connectDisabledTwoParents')}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                )
+              })}
+              {group.kind === 'choice' && (
+                <label
+                  className="connection-item"
+                  htmlFor="connection-no-parent"
+                >
+                  <input
+                    id="connection-no-parent"
+                    type="radio"
+                    name="other-parent-choice"
+                    value="__none__"
+                    checked={answers.choice === '__none__'}
+                    aria-invalid={error}
+                    onChange={() =>
+                      onAnswers({ ...answers, choice: '__none__' })
+                    }
+                  />
+                  <span>{t('connectChildNone')}</span>
+                </label>
+              )}
+            </div>
+            {error && group.kind === 'choice' && (
+              <p
+                className="field__error"
+                id={`connection-${group.id}-error`}
+                role="alert"
+              >
+                {t('connectChildError')}
+              </p>
+            )}
+          </fieldset>
+        )
+      })}
+    </div>
   )
 }
 

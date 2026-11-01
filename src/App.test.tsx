@@ -256,6 +256,87 @@ describe('start tree and add a relative', () => {
     expect(afterChange.defaultPrevented).toBe(true)
   })
 
+  it('preselects smart connections and asks when there are multiple other parents', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+    await user.type(screen.getByLabelText('First name'), 'Mia')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Add partner' }))
+    const miaAsPartnerChild = screen.getByRole('checkbox', {
+      name: 'Mia is also a child of the new partner',
+    })
+    expect(miaAsPartnerChild).toBeChecked()
+    await user.type(screen.getByLabelText('First name'), 'Piotr')
+    await user.click(screen.getByRole('button', { name: 'PL' }))
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Mia jest też dzieckiem nowo dodanej osoby',
+      }),
+    ).toBeChecked()
+    expect(screen.getByLabelText('Imię')).toHaveValue('Piotr')
+    await user.click(screen.getByRole('button', { name: 'EN' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await user.click(screen.getByRole('button', { name: 'Mia' }))
+    expect(screen.getByRole('button', { name: 'Add parent' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Add parent' })).toHaveAttribute(
+      'aria-describedby',
+      'relative-parent-limit',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+    const piotrAsParent = screen.getByRole('checkbox', {
+      name: 'Also a child of Piotr',
+    })
+    expect(piotrAsParent).toBeChecked()
+    await user.type(screen.getByLabelText('First name'), 'Olek')
+    await user.click(piotrAsParent)
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Add partner' }))
+    expect(
+      screen.getByRole('checkbox', {
+        name: /Mia is also a child of the new partner/,
+      }),
+    ).toBeDisabled()
+    const olekAsPartnerChild = screen.getByRole('checkbox', {
+      name: 'Olek is also a child of the new partner',
+    })
+    expect(olekAsPartnerChild).toBeChecked()
+    await user.type(screen.getByLabelText('First name'), 'Marek')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+    const otherParentRadios = screen.getAllByRole('radio')
+    expect(otherParentRadios).toHaveLength(3)
+    expect(
+      otherParentRadios.every((radio) => !(radio as HTMLInputElement).checked),
+    ).toBe(true)
+    await user.type(screen.getByLabelText('First name'), 'Zosia')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Choose the other parent, or "No other parent"',
+    )
+    expect(screen.getAllByRole('radio')[0]).toHaveFocus()
+    expect(screen.queryByRole('button', { name: 'Zosia' })).toBeNull()
+    await user.click(screen.getByRole('radio', { name: 'No other parent' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(
+      await screen.findByRole('button', { name: 'Zosia' }),
+    ).toBeInTheDocument()
+  })
+
   it('exports the tree, marks it clean, then marks changes dirty again', async () => {
     const user = userEvent.setup()
     const createObjectURL = vi.fn((blob: Blob) => {

@@ -22,6 +22,7 @@ import {
   addFirstPerson,
   addRelative,
   createEmptyTree,
+  type ConnectionAnswers,
   type FamilyTree,
   type PersonName,
 } from './model/tree'
@@ -168,8 +169,9 @@ function App() {
     selectedId: string,
     relation: 'parent' | 'child' | 'sibling' | 'partner',
     name: PersonName,
+    answers: ConnectionAnswers,
   ) {
-    const tree = addRelative(state.tree, selectedId, relation, name)
+    const tree = addRelative(state.tree, selectedId, relation, name, answers)
     dispatch({
       type: 'add-relative',
       tree,
