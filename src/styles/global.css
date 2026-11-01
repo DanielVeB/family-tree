@@ -64,9 +64,11 @@ a:focus-visible {
 
 .app-shell {
   display: flex;
+  height: 100dvh;
   min-height: 100dvh;
   flex-direction: column;
   background: var(--cream);
+  overflow: hidden;
 }
 
 .top-bar {
@@ -178,6 +180,296 @@ h1 {
   color: var(--charcoal);
 }
 
+.tree-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.tree-workspace {
+  position: relative;
+  display: grid;
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.tree-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--cream);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.tree-canvas:active {
+  cursor: grabbing;
+}
+
+.tree-surface {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  will-change: transform;
+}
+
+.tree-lines {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tree-lines path {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+}
+
+.person-card {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  min-height: 88px;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--cream);
+  color: var(--charcoal);
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.person-card[aria-pressed='true'] {
+  outline: 2px solid var(--ring);
+  outline-offset: 0;
+}
+
+.person-card__avatar {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--tint-faint);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.person-card__name {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.canvas-controls {
+  position: absolute;
+  z-index: 2;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.icon-pill {
+  display: inline-grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--cream);
+  color: var(--charcoal);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.icon-pill--fit {
+  font-size: 18px;
+}
+
+.panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--cream);
+}
+
+.detail-panel {
+  position: absolute;
+  z-index: 3;
+  right: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: 12px;
+  max-height: 50dvh;
+  padding: 24px 16px 16px;
+  overflow-y: auto;
+}
+
+.detail-panel__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.detail-panel__name {
+  max-width: calc(100% - 44px);
+  margin: 0 0 24px;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.9px;
+  overflow-wrap: anywhere;
+}
+
+.detail-panel h3 {
+  margin: 20px 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.relations__group {
+  margin: 0 0 12px;
+}
+
+.relations__group h3 {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+.relations ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.relative-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.relative-actions .button {
+  flex: 1 1 42%;
+  min-width: 0;
+}
+
+.detail-panel__form-title {
+  max-width: calc(100% - 44px);
+  margin: 0 0 24px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+  overflow-wrap: anywhere;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+  color: var(--charcoal);
+  font-size: 14px;
+}
+
+.field input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--cream);
+  color: var(--charcoal);
+  font: inherit;
+  font-size: 16px;
+}
+
+.field input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.field__error {
+  color: var(--charcoal);
+  font-size: 14px;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.form-actions .button {
+  flex: 1 1 120px;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  padding: 24px;
+  background: var(--border-strong);
+}
+
+.new-tree-dialog {
+  width: min(100%, 480px);
+  padding: 24px;
+}
+
+.new-tree-dialog h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.9px;
+}
+
+.new-tree-dialog > p {
+  margin: 12px 0 24px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+@media (hover: hover) {
+  .person-card:hover {
+    border-color: var(--border-strong);
+  }
+}
+
 @media (min-width: 640px) {
   .empty-state__actions {
     flex-direction: row;
@@ -188,9 +480,39 @@ h1 {
   .button {
     min-width: 160px;
   }
+
+  .detail-panel {
+    right: 16px;
+    left: auto;
+    width: 360px;
+    max-height: calc(100% - 32px);
+    padding: 24px;
+  }
 }
 
 @media (min-width: 1024px) {
+  .tree-workspace--detail-open {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+
+  .detail-panel {
+    position: relative;
+    inset: auto;
+    width: auto;
+    max-height: none;
+    padding: 32px 24px;
+    overflow-y: auto;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 0;
+    border-radius: 0;
+  }
+
+  .detail-panel__close {
+    top: 16px;
+    right: 16px;
+  }
+
   h1 {
     font-size: 48px;
     letter-spacing: -1.2px;
@@ -204,5 +526,18 @@ h1 {
 @media (hover: hover) {
   .language-toggle button:hover:not([aria-pressed='true']) {
     background: var(--tint-hover);
+  }
+}
+
+@media (max-width: 639px) {
+  .top-bar {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+
+  .new-tree-dialog {
+    align-self: end;
+    padding: 24px 16px max(24px, env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0;
   }
 }

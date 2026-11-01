@@ -52,44 +52,42 @@ A simple, modern family tree web app that runs in every modern browser, on both 
 
 ## 5. Data Model
 
-The JSON file is the database. Keep it flat, normalized, and versioned.
+The tree is a versioned graph of nodes (people) and typed edges (relationships).
+The in-memory tree already has the JSON shape expected by future import/export:
 
 ```ts
-type PersonId = string;
-type UnionId = string;
-
-interface Person {
-  id: PersonId;
-  name: string;            // required, display name
-  born?: string;           // free-form or partial date: "1948", "1948-05", "1948-05-12"
-  died?: string;           // same format as born
-  notes?: string;          // short free text
+interface PersonNode {
+  id: string;
+  data: { firstName: string; lastName?: string; [key: string]: unknown };
 }
 
-interface Union {          // a couple / partnership
-  id: UnionId;
-  partners: [PersonId, PersonId?];   // second partner optional (single parent)
+interface TreeEdge {
+  from: string;
+  to: string;
+  type: "child" | "sibling" | "marriage";
 }
 
-interface ChildLink {
-  union: UnionId;
-  child: PersonId;
-}
-
-interface FamilyTreeFile {
-  version: 1;              // bump on breaking schema changes, add migrations
-  people: Record<PersonId, Person>;
-  unions: Union[];
-  children: ChildLink[];
+interface FamilyTree {
+  version: 1;
+  nodes: PersonNode[];
+  edges: TreeEdge[];
+  [key: string]: unknown;
 }
 ```
 
+| Edge type | Meaning and direction | Duplicate comparison |
+|-----------|-----------------------|----------------------|
+| `child` | `to` is a child of `from` (directed) | Ordered pair |
+| `sibling` | The people are siblings (undirected) | Either pair order is identical |
+| `marriage` | The people are married partners (undirected) | Either pair order is identical |
+
 Rules:
-- IDs are generated in the browser (`crypto.randomUUID()`), never derived from names.
-- A person can belong to multiple unions (remarriage) and be a child in at most one union.
-- Deleting a person removes their union memberships and child links. If it would leave an orphaned branch, ask for confirmation first and explain what will be removed.
-- Prevent invalid structures: self-parenting, cycles in ancestry, and duplicate links.
-- Do **not** embed photos or base64 blobs in v1. Keep files small and human-readable.
+- IDs are generated in the browser with `crypto.randomUUID()`, never derived from names.
+- First names are required, trimmed, and 1–100 characters. Last names are optional, trimmed, and 0–100 characters.
+- Edge endpoints must exist, self-edges and duplicate edges are invalid, and child edges must not form ancestry cycles.
+- Relation types are declared in one place with the schema in `src/model/`; extend this definition alongside its UI label.
+- Zod schemas preserve unknown node, `data`, edge, and top-level fields for forward compatibility.
+- `getDisplayName(person)` is the single helper for building a person's displayed name.
 - Always include `version`. When the schema changes, add a migration function from the previous version.
 
 ## 6. Core Features (v1 scope)
@@ -97,7 +95,7 @@ Rules:
 In scope:
 1. **Import** a `.json` file (file picker and drag-and-drop on desktop). Validate with zod. On failure, show a clear, friendly error and keep the current tree untouched.
 2. **Export** the current tree as a downloaded `.json` file (`Blob` plus `<a download>`). Filename like `family-tree-YYYY-MM-DD.json`.
-3. **View** the tree on a pannable, zoomable canvas with person cards and connector lines.
+3. **View** the nodes and relationship edges on a pannable, zoomable canvas with person cards and connector lines.
 4. **Select** a person to open the detail view (bottom sheet on mobile, side panel on desktop).
 5. **Add** a person (as parent, partner, child, or sibling of the selected person) and a standalone first person for an empty tree.
 6. **Edit** a person's fields.
@@ -114,7 +112,7 @@ Out of scope for v1 (do not build unless asked): accounts, cloud sync, collabora
 
 - **Use only universally supported APIs as the main path:** `<input type="file">`, `FileReader` or `file.text()`, `Blob`, `URL.createObjectURL`, `<a download>`. These work in Chrome, Safari (including iOS), Firefox, and Edge.
 - The File System Access API may be added only as an optional enhancement. It must never be required.
-- Validation errors should say what is wrong in plain language (for example "This file is missing the 'people' section"), not dump raw zod output.
+- Validation errors should say what is wrong in plain language (for example "This file is missing the 'nodes' section"), not dump raw zod output.
 - Never silently overwrite the current tree on import. If the tree has unsaved or unexported changes, confirm first.
 - Revoke object URLs after export to avoid leaks.
 - Unknown extra fields in an imported file should be preserved where practical, and never crash the import.
@@ -164,7 +162,7 @@ Out of scope for v1 (do not build unless asked): accounts, cloud sync, collabora
    ├─ main.tsx
    ├─ App.tsx
    ├─ styles/               # tokens.css (variables from DESIGN.md), global.css
-   ├─ model/                # types, zod schema, migrations, pure tree operations
+   ├─ model/                # node/edge types, zod schema, migrations, pure tree operations
    ├─ state/                # reducer, undo/redo, autosave
    ├─ i18n/                 # i18n setup, locales/en.json, locales/pl.json, language detection
    ├─ io/                   # import/export helpers, file validation
@@ -187,7 +185,7 @@ Principles:
 
 ## 11. Testing Requirements
 
-- Unit tests (Vitest) for everything in `model/`: add person, add relative, delete with cascade, cycle prevention, migrations.
+- Unit tests (Vitest) for `model/`: create tree, add first person, add each relative edge, name validation, duplicate/self/unknown-edge validation, cycle prevention, migrations.
 - Import tests: valid file, missing fields, wrong types, wrong version, huge file, empty file, non-JSON file.
 - Round-trip test: import → export → import produces an identical tree, including names with Polish diacritics.
 - Translation tests: `en` and `pl` resources have exactly the same keys, no value is empty, and every plural key has all the forms each language needs (English: one/other; Polish: one/few/many/other).
