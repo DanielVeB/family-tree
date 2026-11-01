@@ -48,10 +48,26 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     const group = find(node.id)
     membersByGroup.set(group, [...(membersByGroup.get(group) ?? []), node.id])
   }
+  const partnersByPerson = new Map<string, string[]>()
+  for (const edge of tree.edges) {
+    if (edge.type !== 'marriage') continue
+    partnersByPerson.set(edge.from, [
+      ...(partnersByPerson.get(edge.from) ?? []),
+      edge.to,
+    ])
+    partnersByPerson.set(edge.to, [
+      ...(partnersByPerson.get(edge.to) ?? []),
+      edge.from,
+    ])
+  }
   const groups = [...membersByGroup.entries()]
     .map(([id, members]) => ({
       id,
-      members: members.sort((a, b) => indexById.get(a)! - indexById.get(b)!),
+      members: orderGroupMembers(
+        members,
+        partnersByPerson,
+        indexById,
+      ),
       order: Math.min(...members.map((member) => indexById.get(member)!)),
       generation: 0,
     }))
@@ -130,10 +146,32 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     maxWidth = Math.max(maxWidth, nextX)
   }
 
-  const edgePaths = tree.edges.map((edge) => ({
-    edge,
-    path: getEdgePath(edge, positions, cardWidth),
-  }))
+  const familyGroups = getTwoParentFamilies(tree)
+  const consumedEdges = new Set<TreeEdge>()
+  const familyPathByEdge = new Map<TreeEdge, string>()
+  for (const family of familyGroups) {
+    family.childEdges.forEach((edge) => consumedEdges.add(edge))
+    const marriage = tree.edges.find(
+      (edge) =>
+        edge.type === 'marriage' &&
+        samePair(edge.from, edge.to, family.parents[0], family.parents[1]),
+    )
+    const representative = marriage ?? family.childEdges[0]!
+    if (marriage) consumedEdges.add(marriage)
+    familyPathByEdge.set(
+      representative,
+      getFamilyPath(family, positions, cardWidth),
+    )
+  }
+  const edgePaths: LayoutResult['edgePaths'] = []
+  for (const edge of tree.edges) {
+    const familyPath = familyPathByEdge.get(edge)
+    if (familyPath !== undefined) {
+      edgePaths.push({ edge, path: familyPath })
+    } else if (!consumedEdges.has(edge)) {
+      edgePaths.push({ edge, path: getEdgePath(edge, positions, cardWidth) })
+    }
+  }
   const maxGeneration = Math.max(0, ...groups.map((group) => group.generation))
   return {
     positions,
@@ -141,6 +179,115 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     width: Math.max(maxWidth, cardWidth + 80),
     height: 80 + (maxGeneration + 1) * (CARD_HEIGHT + VERTICAL_GAP),
   }
+}
+
+function orderGroupMembers(
+  members: string[],
+  partnersByPerson: Map<string, string[]>,
+  indexById: Map<string, number>,
+): string[] {
+  const ordered: string[] = []
+  const included = new Set<string>()
+  const byIndex = [...members].sort(
+    (a, b) => indexById.get(a)! - indexById.get(b)!,
+  )
+
+  for (const id of byIndex) {
+    if (included.has(id)) continue
+    ordered.push(id)
+    included.add(id)
+    const partners = (partnersByPerson.get(id) ?? [])
+      .filter((partner) => members.includes(partner) && !included.has(partner))
+      .sort((a, b) => indexById.get(a)! - indexById.get(b)!)
+    for (const partner of partners) {
+      ordered.push(partner)
+      included.add(partner)
+    }
+  }
+  return ordered
+}
+
+interface TwoParentFamily {
+  parents: [string, string]
+  children: string[]
+  childEdges: TreeEdge[]
+}
+
+function getTwoParentFamilies(tree: FamilyTree): TwoParentFamily[] {
+  const families = new Map<string, TwoParentFamily>()
+  for (const child of tree.nodes) {
+    const childEdges = tree.edges.filter(
+      (edge) => edge.type === 'child' && edge.to === child.id,
+    )
+    if (childEdges.length !== 2) continue
+    const parents = childEdges
+      .map((edge) => edge.from)
+      .sort(
+        (a, b) =>
+          tree.nodes.findIndex((node) => node.id === a) -
+          tree.nodes.findIndex((node) => node.id === b),
+      ) as [string, string]
+    const key = JSON.stringify(parents)
+    const family = families.get(key) ?? {
+      parents,
+      children: [],
+      childEdges: [],
+    }
+    family.children.push(child.id)
+    family.childEdges.push(...childEdges)
+    families.set(key, family)
+  }
+  return [...families.values()]
+}
+
+function samePair(
+  firstA: string,
+  firstB: string,
+  secondA: string,
+  secondB: string,
+): boolean {
+  return (
+    (firstA === secondA && firstB === secondB) ||
+    (firstA === secondB && firstB === secondA)
+  )
+}
+
+function getFamilyPath(
+  family: TwoParentFamily,
+  positions: Record<string, Point>,
+  cardWidth: number,
+): string {
+  const parents = family.parents
+    .map((id) => positions[id])
+    .filter((point): point is Point => Boolean(point))
+    .sort((a, b) => a.x - b.x)
+  const children = family.children
+    .map((id) => positions[id])
+    .filter((point): point is Point => Boolean(point))
+    .sort((a, b) => a.x - b.x)
+  if (parents.length !== 2 || children.length === 0) return ''
+
+  const parentCenters = parents.map((point) => point.x + cardWidth / 2)
+  const parentJoinY = Math.max(
+    ...parents.map((point) => point.y + CARD_HEIGHT),
+  ) + 16
+  const familyCenterX = (parentCenters[0]! + parentCenters[1]!) / 2
+  const childJoinY = Math.min(...children.map((point) => point.y)) - 16
+  const childCenters = children.map((point) => point.x + cardWidth / 2)
+  const commands = [
+    `M ${parentCenters[0]} ${parents[0]!.y + CARD_HEIGHT} V ${parentJoinY} H ${parentCenters[1]}`,
+    `M ${familyCenterX} ${parentJoinY} V ${childJoinY} H ${childCenters[0]}`,
+  ]
+  for (const child of children) {
+    const center = child.x + cardWidth / 2
+    commands.push(`M ${center} ${childJoinY} V ${child.y}`)
+  }
+  if (childCenters.length > 1) {
+    commands.push(
+      `M ${childCenters[0]} ${childJoinY} H ${childCenters[childCenters.length - 1]}`,
+    )
+  }
+  return commands.join(' ')
 }
 
 function getEdgePath(
