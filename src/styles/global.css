@@ -109,6 +109,25 @@ a:focus-visible {
   white-space: nowrap;
 }
 
+.import-button {
+  position: relative;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
 .export-button--dirty::after {
   position: absolute;
   top: 5px;
@@ -158,6 +177,10 @@ a:focus-visible {
   font-size: 16px;
   font-weight: 600;
   text-decoration: none;
+}
+
+.wordmark__compact {
+  display: none;
 }
 
 .language-toggle {
@@ -520,6 +543,25 @@ h1 {
   padding: 24px;
 }
 
+.replace-tree-dialog {
+  width: min(100%, 480px);
+  padding: 24px;
+}
+
+.replace-tree-dialog h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.9px;
+}
+
+.replace-tree-dialog > p {
+  margin: 12px 0 24px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .new-tree-dialog h2 {
   margin: 0;
   font-size: 28px;
@@ -549,6 +591,10 @@ h1 {
 
   .button {
     min-width: 160px;
+  }
+
+  .export-controls .button {
+    min-width: 0;
   }
 
   .detail-panel {
@@ -633,6 +679,12 @@ h1 {
     padding: 24px 16px max(24px, env(safe-area-inset-bottom));
     border-radius: 16px 16px 0 0;
   }
+
+  .replace-tree-dialog {
+    align-self: end;
+    padding: 24px 16px max(24px, env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0;
+  }
 }
 
 @media (max-width: 400px) {
@@ -640,10 +692,24 @@ h1 {
     font-size: 14px;
   }
 
+  .wordmark__full {
+    display: none;
+  }
+
+  .wordmark__compact {
+    display: inline;
+  }
+
+  .import-button,
   .export-button {
     width: 44px;
     padding: 0;
     font-size: 0;
+  }
+
+  .import-button::before {
+    font-size: 20px;
+    content: '↑';
   }
 
   .export-button::before {

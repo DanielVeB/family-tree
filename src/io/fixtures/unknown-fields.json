@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "futureMetadata": {
+    "source": "fictional-test"
+  },
+  "nodes": [
+    {
+      "id": "person-anna",
+      "futureNodeField": true,
+      "data": {
+        "firstName": "Anna",
+        "futureDataField": ["kept"]
+      }
+    },
+    {
+      "id": "person-jan",
+      "data": {
+        "firstName": "Jan"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "person-anna",
+      "to": "person-jan",
+      "type": "child",
+      "futureEdgeField": 7
+    }
+  ]
+}

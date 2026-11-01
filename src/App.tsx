@@ -1,14 +1,23 @@
-import { useEffect, useReducer, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { ZodError } from 'zod'
-import ExportToast from './components/ExportToast'
+import Toast, { type ToastMessage } from './components/Toast'
 import NewTreeDialog from './components/NewTreeDialog'
+import ReplaceTreeDialog from './components/ReplaceTreeDialog'
 import TreeView from './components/TreeView'
 import {
   buildExportFilename,
   serializeTree,
   startTreeDownload,
 } from './io/exportTree'
+import { parseTreeFile } from './io/importTree'
 import {
   addFirstPerson,
   addRelative,
@@ -24,6 +33,8 @@ interface AppState {
   revision: number
   exportedRevision: number | null
   exportedAt: Date | null
+  loadedFromFile: boolean
+  viewKey: number
 }
 
 type AppAction =
@@ -31,6 +42,7 @@ type AppAction =
   | { type: 'select'; selectedId: string | null }
   | { type: 'add-relative'; tree: FamilyTree; selectedId: string }
   | { type: 'export-started'; exportedAt: Date }
+  | { type: 'imported'; tree: FamilyTree }
 
 function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -39,8 +51,10 @@ function reducer(state: AppState, action: AppAction): AppState {
         tree: action.tree,
         selectedId: null,
         revision: state.revision + 1,
-        exportedRevision: null,
-        exportedAt: null,
+        exportedRevision: state.exportedRevision,
+        exportedAt: state.exportedAt,
+        loadedFromFile: false,
+        viewKey: state.viewKey,
       }
     case 'select':
       return { ...state, selectedId: action.selectedId }
@@ -50,13 +64,27 @@ function reducer(state: AppState, action: AppAction): AppState {
         tree: action.tree,
         selectedId: action.selectedId,
         revision: state.revision + 1,
+        loadedFromFile: false,
       }
     case 'export-started':
       return {
         ...state,
         exportedRevision: state.revision,
         exportedAt: action.exportedAt,
+        loadedFromFile: false,
       }
+    case 'imported': {
+      const revision = state.revision + 1
+      return {
+        tree: action.tree,
+        selectedId: null,
+        revision,
+        exportedRevision: revision,
+        exportedAt: null,
+        loadedFromFile: true,
+        viewKey: state.viewKey + 1,
+      }
+    }
   }
 }
 
@@ -68,32 +96,39 @@ function App() {
     revision: 0,
     exportedRevision: null,
     exportedAt: null,
+    loadedFromFile: false,
+    viewKey: 0,
   })
   const [showNewTreeDialog, setShowNewTreeDialog] = useState(false)
+  const [pendingImport, setPendingImport] = useState<FamilyTree | null>(null)
   const [exportBusy, setExportBusy] = useState(false)
-  const [exportToast, setExportToast] = useState<{
-    filename: string | null
-    error: boolean
-  } | null>(null)
+  const [toast, setToast] = useState<ToastMessage | null>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const importButtonRef = useRef<HTMLButtonElement>(null)
   const exportBusyRef = useRef(false)
   const exportBusyTimeoutRef = useRef<number | null>(null)
   const exportToastTimeoutRef = useRef<number | null>(null)
   const hasTree = state.tree.nodes.length > 0
   const exportStatus = getExportStatus(state.revision, state.exportedRevision)
+  const status = state.loadedFromFile ? 'loaded' : exportStatus
+  const hasUnexportedChanges =
+    hasTree &&
+    !state.loadedFromFile &&
+    isTreeDirty(state.revision, state.exportedRevision)
 
   useEffect(() => {
     document.title = t('documentTitle')
   }, [i18n.language, t])
 
   useEffect(() => {
-    if (!hasTree || !isTreeDirty(state.revision, state.exportedRevision)) return
+    if (!hasUnexportedChanges) return
     const preventLeaving = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', preventLeaving)
     return () => window.removeEventListener('beforeunload', preventLeaving)
-  }, [hasTree, state.revision, state.exportedRevision])
+  }, [hasUnexportedChanges])
 
   useEffect(
     () => () => {
@@ -142,13 +177,17 @@ function App() {
     })
   }
 
-  function showExportFeedback(filename: string | null, error = false) {
+  function showExportFeedback(filename: string | null) {
     if (exportToastTimeoutRef.current !== null) {
       window.clearTimeout(exportToastTimeoutRef.current)
     }
-    setExportToast({ filename, error })
+    setToast(
+      filename
+        ? { kind: 'export-success', filename }
+        : { kind: 'export-error' },
+    )
     exportToastTimeoutRef.current = window.setTimeout(
-      () => setExportToast(null),
+      () => setToast(null),
       8000,
     )
   }
@@ -175,29 +214,79 @@ function App() {
       } else {
         console.error('Tree export could not be started.')
       }
-      showExportFeedback(null, true)
+      showExportFeedback(null)
     }
   }
 
+  function showImportFeedback(message: ToastMessage) {
+    if (exportToastTimeoutRef.current !== null) {
+      window.clearTimeout(exportToastTimeoutRef.current)
+    }
+    setToast(message)
+    exportToastTimeoutRef.current = window.setTimeout(
+      () => setToast(null),
+      8000,
+    )
+  }
+
+  function applyImport(tree: FamilyTree) {
+    dispatch({ type: 'imported', tree })
+    setPendingImport(null)
+    setShowNewTreeDialog(false)
+    showImportFeedback({ kind: 'import-success', count: tree.nodes.length })
+  }
+
+  async function importFile(file: File | undefined) {
+    if (!file) return
+    try {
+      const result = parseTreeFile(await file.text())
+      if (!result.ok) {
+        showImportFeedback({ kind: 'import-error' })
+        return
+      }
+      if (hasUnexportedChanges) {
+        setPendingImport(result.tree)
+        return
+      }
+      applyImport(result.tree)
+    } catch {
+      showImportFeedback({ kind: 'import-error' })
+    }
+  }
+
+  function handleImportSelection(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    void importFile(file)
+  }
+
+  const cancelImportConfirmation = useCallback(() => {
+    setPendingImport(null)
+    window.requestAnimationFrame(() => importButtonRef.current?.focus())
+  }, [])
+
   const statusText =
-    exportStatus === 'never'
-      ? t('exportStatusNever')
-      : exportStatus === 'dirty'
-        ? t('exportStatusDirty')
-        : t('exportStatusDone', {
-            time: state.exportedAt
-              ? new Intl.DateTimeFormat(i18n.language, {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                }).format(state.exportedAt)
-              : '',
-          })
+    status === 'loaded'
+      ? t('exportStatusLoaded')
+      : status === 'never'
+        ? t('exportStatusNever')
+        : status === 'dirty'
+          ? t('exportStatusDirty')
+          : t('exportStatusDone', {
+              time: state.exportedAt
+                ? new Intl.DateTimeFormat(i18n.language, {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }).format(state.exportedAt)
+                : '',
+            })
 
   return (
     <div className="app-shell">
       <header className="top-bar">
         <a className="wordmark" href={import.meta.env.BASE_URL}>
-          {t('appName')}
+          <span className="wordmark__full">{t('appName')}</span>
+          <span className="wordmark__compact">{t('appNameShort')}</span>
         </a>
         <div className="top-bar__actions">
           {hasTree && (
@@ -206,7 +295,16 @@ function App() {
                 {statusText}
               </span>
               <button
-                className={`button button--ghost export-button${exportStatus !== 'done' ? ' export-button--dirty' : ''}`}
+                ref={importButtonRef}
+                className="button button--ghost import-button"
+                type="button"
+                aria-label={t('importButtonLabel')}
+                onClick={() => importInputRef.current?.click()}
+              >
+                {t('importButton')}
+              </button>
+              <button
+                className={`button button--ghost export-button${status === 'never' || status === 'dirty' ? ' export-button--dirty' : ''}`}
                 type="button"
                 disabled={exportBusy}
                 aria-label={t('exportButtonLabel')}
@@ -256,8 +354,9 @@ function App() {
               <button
                 className="button button--ghost"
                 type="button"
-                disabled
-                aria-disabled="true"
+                ref={importButtonRef}
+                aria-label={t('importButtonLabel')}
+                onClick={() => importInputRef.current?.click()}
               >
                 {t('importFile')}
               </button>
@@ -267,6 +366,7 @@ function App() {
       ) : (
         <main className="tree-main">
           <TreeView
+            key={state.viewKey}
             tree={state.tree}
             selectedId={state.selectedId}
             onSelect={(selectedId) => dispatch({ type: 'select', selectedId })}
@@ -280,15 +380,28 @@ function App() {
           onCancel={() => setShowNewTreeDialog(false)}
         />
       )}
-      <ExportToast
-        filename={exportToast?.filename ?? null}
-        error={exportToast?.error ?? false}
+      <input
+        ref={importInputRef}
+        className="visually-hidden"
+        type="file"
+        accept=".json,application/json"
+        aria-label={t('importButtonLabel')}
+        onChange={handleImportSelection}
+      />
+      {pendingImport && (
+        <ReplaceTreeDialog
+          onReplace={() => applyImport(pendingImport)}
+          onCancel={cancelImportConfirmation}
+        />
+      )}
+      <Toast
+        message={toast}
         onClose={() => {
           if (exportToastTimeoutRef.current !== null) {
             window.clearTimeout(exportToastTimeoutRef.current)
             exportToastTimeoutRef.current = null
           }
-          setExportToast(null)
+          setToast(null)
         }}
       />
     </div>

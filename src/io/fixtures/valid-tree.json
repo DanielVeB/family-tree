@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "person-lucja",
+      "data": {
+        "firstName": "Łucja",
+        "lastName": "Żółć"
+      }
+    },
+    {
+      "id": "person-jan",
+      "data": {
+        "firstName": "Jan",
+        "lastName": "Przykładowy"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "person-lucja",
+      "to": "person-jan",
+      "type": "child"
+    }
+  ]
+}

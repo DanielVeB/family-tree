@@ -14,12 +14,15 @@ They contain the tree itself, not interface state or export timestamps.
 - Unknown fields on the tree, nodes, data, and edges are retained where
   supported.
 
+When importing and exporting a file, the app preserves unknown fields so that
+data from a newer format can survive a round trip through this version.
+
 ## Relationship types
 
-| Type | Meaning | Direction |
-|------|---------|-----------|
-| `child` | `to` is a child of `from` | Directed from parent to child |
-| `sibling` | The people are siblings | Undirected; store one edge only |
+| Type       | Meaning                         | Direction                       |
+| ---------- | ------------------------------- | ------------------------------- |
+| `child`    | `to` is a child of `from`       | Directed from parent to child   |
+| `sibling`  | The people are siblings         | Undirected; store one edge only |
 | `marriage` | The people are married partners | Undirected; store one edge only |
 
 For `sibling` and `marriage`, reversing `from` and `to` does not create a

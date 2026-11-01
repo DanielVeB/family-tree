@@ -8,6 +8,10 @@ A private, client-side family tree app. Family data stays in your browser and is
 
 Exported files contain personal data. Store them securely and share them only with people you trust. See the [JSON file format guide](docs/file-format.md) for the file structure and relationship rules.
 
+Use **Import a file** to load a previously exported family tree. Use **Export**
+to download the current tree as a JSON file. Importing replaces the open tree;
+the app asks for confirmation first if it has changes that were not exported.
+
 ## Run locally
 
 ```sh

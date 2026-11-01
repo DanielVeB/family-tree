@@ -7,14 +7,54 @@ import en from './locales/en.json'
 import pl from './locales/pl.json'
 
 describe('translations', () => {
-  it('has matching keys and non-empty values in English and Polish', () => {
-    expect(Object.keys(en).sort()).toEqual(Object.keys(pl).sort())
+  it('has matching base keys, complete locale plurals, and non-empty values', () => {
+    const normalizeKeys = (keys: string[]) =>
+      [
+        ...new Set(
+          keys.map((key) => key.replace(/_(one|few|many|other)$/, '')),
+        ),
+      ].sort()
+    expect(normalizeKeys(Object.keys(en))).toEqual(
+      normalizeKeys(Object.keys(pl)),
+    )
     expect(Object.values(en).every((value) => value.trim().length > 0)).toBe(
       true,
     )
     expect(Object.values(pl).every((value) => value.trim().length > 0)).toBe(
       true,
     )
+    expect(
+      Object.keys(en)
+        .filter((key) => key.startsWith('importSuccess_'))
+        .sort(),
+    ).toEqual(['importSuccess_one', 'importSuccess_other'])
+    expect(
+      Object.keys(pl)
+        .filter((key) => key.startsWith('importSuccess_'))
+        .sort(),
+    ).toEqual([
+      'importSuccess_few',
+      'importSuccess_many',
+      'importSuccess_one',
+      'importSuccess_other',
+    ])
+  })
+
+  it('uses the correct English and Polish import success plurals', async () => {
+    await i18n.changeLanguage('en')
+    expect(
+      [1, 2, 5].map((count) => i18n.t('importSuccess', { count })),
+    ).toEqual(['Loaded 1 person', 'Loaded 2 people', 'Loaded 5 people'])
+    await i18n.changeLanguage('pl')
+    expect(
+      [1, 2, 5, 22].map((count) => i18n.t('importSuccess', { count })),
+    ).toEqual([
+      'Wczytano 1 osobę',
+      'Wczytano 2 osoby',
+      'Wczytano 5 osób',
+      'Wczytano 22 osoby',
+    ])
+    await i18n.changeLanguage('en')
   })
 })
 
