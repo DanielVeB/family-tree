@@ -44,6 +44,7 @@
   "connectPartnerLegend": "Które dzieci osoby {{name}} są też dziećmi nowo dodanej osoby?",
   "connectPartnerItem": "{{child}} jest też dzieckiem nowo dodanej osoby",
   "connectChildLegend": "Kto jest drugim rodzicem?",
+  "connectChildSiblingsLegend": "Które z istniejących dzieci osoby {{name}} połączyć także relacją rodzeństwa?",
   "connectChildNone": "Brak drugiego rodzica",
   "connectChildError": "Wybierz drugiego rodzica lub „Brak drugiego rodzica”",
   "connectAlsoChildOf": "Także dziecko osoby {{parent}}",

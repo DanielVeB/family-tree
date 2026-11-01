@@ -294,6 +294,23 @@ describe('start tree and add a relative', () => {
 
     await user.click(screen.getByRole('button', { name: 'Anna' }))
     await user.click(screen.getByRole('button', { name: 'Add child' }))
+    expect(
+      screen.getByRole('checkbox', {
+        name: 'Also a sibling of Mia',
+      }),
+    ).toBeChecked()
+    expect(
+      screen.getByRole('group', {
+        name: "Which of Anna's existing children should also be linked as siblings?",
+      }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'PL' }))
+    expect(
+      screen.getByRole('group', {
+        name: 'Które z istniejących dzieci osoby Anna połączyć także relacją rodzeństwa?',
+      }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'EN' }))
     const piotrAsParent = screen.getByRole('checkbox', {
       name: 'Also a child of Piotr',
     })

@@ -142,7 +142,7 @@ describe('smart connection questions and operations', () => {
     ])
   })
 
-  it('C1-C5 chooses checkbox, radio list, and co-parent candidates in edge order', () => {
+  it('C1-C6 chooses other-parent and sibling connections in deterministic edge order', () => {
     const noCandidates = makeTree(['anna'])
     expect(getConnectionQuestions(noCandidates, 'anna', 'child')).toEqual([])
 
@@ -172,6 +172,51 @@ describe('smart connection questions and operations', () => {
         { personId: 'marek' },
       ],
     })
+    expect(getConnectionQuestions(multiple, 'anna', 'child')[1]).toMatchObject({
+      id: 'childSiblings',
+      kind: 'checkboxes',
+      items: [{ personId: 'mia', defaultChecked: true }],
+    })
+  })
+
+  it('adds only selected explicit sibling links after other-parent edges when adding a child', () => {
+    const tree = makeTree(
+      ['anna', 'piotr', 'mia', 'olek'],
+      [
+        marriage('anna', 'piotr'),
+        child('anna', 'mia'),
+        child('anna', 'olek'),
+      ],
+    )
+    const questions = getConnectionQuestions(tree, 'anna', 'child')
+    expect(questions).toMatchObject([
+      {
+        id: 'childOtherParent',
+        kind: 'single-checkbox',
+        items: [{ personId: 'piotr', defaultChecked: true }],
+      },
+      {
+        id: 'childSiblings',
+        kind: 'checkboxes',
+        items: [
+          { personId: 'mia', defaultChecked: true },
+          { personId: 'olek', defaultChecked: true },
+        ],
+      },
+    ])
+    const updated = addRelative(
+      tree,
+      'anna',
+      'child',
+      { firstName: 'Zosia' },
+      answersFor(questions, { 'childSiblings:olek': false }),
+    )
+    const newId = updated.nodes[4]!.id
+    expect(updated.edges.slice(tree.edges.length)).toEqual([
+      child('anna', newId),
+      child('piotr', newId),
+      sibling(newId, 'mia'),
+    ])
   })
 
   it('requires an explicit other-parent choice and accepts the no-parent answer', () => {

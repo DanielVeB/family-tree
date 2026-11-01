@@ -843,6 +843,7 @@ function ConnectionQuestions({
   const legends: Record<ConnectionQuestionGroup['id'], string> = {
     partnerChildren: t('connectPartnerLegend', { name: targetName }),
     childOtherParent: t('connectChildLegend'),
+    childSiblings: t('connectChildSiblingsLegend', { name: targetName }),
     siblingParents: t('connectSiblingParentsLegend', { name: targetName }),
     siblingSiblings: t('connectSiblingsLegend', { name: targetName }),
     parentSiblings: t('connectSiblingsLegend', { name: targetName }),
@@ -858,6 +859,7 @@ function ConnectionQuestions({
       case 'childOtherParent':
       case 'siblingParents':
         return t('connectAlsoChildOf', { parent: personName })
+      case 'childSiblings':
       case 'siblingSiblings':
         return t('connectAlsoSiblingOf', { name: personName })
       case 'parentSiblings':
