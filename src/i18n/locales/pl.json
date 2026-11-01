@@ -36,5 +36,14 @@
   "zoomOut": "Pomniejsz",
   "fitToScreen": "Dopasuj do ekranu",
   "treeCanvas": "Obszar drzewa rodzinnego",
-  "canvasControls": "Sterowanie obszarem drzewa"
+  "canvasControls": "Sterowanie obszarem drzewa",
+  "exportButton": "Eksportuj",
+  "exportButtonLabel": "Eksportuj drzewo do pliku",
+  "exportStatusNever": "Jeszcze nie wyeksportowano",
+  "exportStatusDirty": "Zmiany nie zostały wyeksportowane",
+  "exportStatusDone": "Wyeksportowano o {{time}}",
+  "exportToastTitle": "Wyeksportowano jako {{filename}}",
+  "exportToastPrivacy": "Plik zawiera dane osób z Twojego drzewa. Udostępniaj go tylko zaufanym osobom.",
+  "exportToastClose": "Zamknij powiadomienie",
+  "exportError": "Nie udało się utworzyć pliku. Drzewo nie zostało zmienione, spróbuj ponownie."
 }

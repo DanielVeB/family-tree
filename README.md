@@ -6,6 +6,8 @@ A private, client-side family tree app. Family data stays in your browser and is
 
 **Prywatność:** Twoje dane pozostają w przeglądarce. Nic nie jest przesyłane. Regularnie eksportuj plik, ponieważ pamięć przeglądarki może zostać wyczyszczona.
 
+Exported files contain personal data. Store them securely and share them only with people you trust. See the [JSON file format guide](docs/file-format.md) for the file structure and relationship rules.
+
 ## Run locally
 
 ```sh

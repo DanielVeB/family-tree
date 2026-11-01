@@ -101,7 +101,7 @@ In scope:
 6. **Edit** a person's fields.
 7. **Delete** a person (with confirmation as described above).
 8. **Undo/redo** for edits.
-9. **Autosave** to browser storage so a refresh does not lose work, plus a "last exported" hint and a gentle reminder to export after several edits.
+9. **Autosave** to browser storage so a refresh does not lose work, plus a "last exported" hint and a warning before leaving when the current tree has unexported changes.
 10. **Start empty or load sample:** a "Try with sample data" action that loads fake data bundled with the app.
 11. **PWA:** installable and works offline after the first load.
 12. **Language switcher:** English and Polish, with automatic first-visit detection and a persistent manual choice (see section 7a).

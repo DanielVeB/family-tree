@@ -81,6 +81,76 @@ a:focus-visible {
   border-bottom: 1px solid var(--border);
 }
 
+.top-bar__actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.export-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.export-status {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.export-button {
+  position: relative;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.export-button--dirty::after {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+  background: var(--charcoal);
+  content: '';
+}
+
+.export-toast {
+  position: fixed;
+  z-index: 20;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: min(420px, calc(100vw - 32px));
+  padding: 16px 56px 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--cream);
+  color: var(--charcoal);
+  line-height: 1.5;
+}
+
+.export-toast p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.export-toast__privacy {
+  margin-top: 4px !important;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.export-toast__close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
 .wordmark {
   min-height: 44px;
   display: inline-flex;
@@ -531,13 +601,53 @@ h1 {
 
 @media (max-width: 639px) {
   .top-bar {
+    gap: 8px;
     padding-right: 16px;
     padding-left: 16px;
+  }
+
+  .top-bar__actions,
+  .export-controls {
+    gap: 4px;
+  }
+
+  .export-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    clip-path: inset(50%);
+  }
+
+  .export-toast {
+    right: 16px;
+    left: 16px;
+    width: auto;
   }
 
   .new-tree-dialog {
     align-self: end;
     padding: 24px 16px max(24px, env(safe-area-inset-bottom));
     border-radius: 16px 16px 0 0;
+  }
+}
+
+@media (max-width: 400px) {
+  .wordmark {
+    font-size: 14px;
+  }
+
+  .export-button {
+    width: 44px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .export-button::before {
+    font-size: 20px;
+    content: '↓';
   }
 }

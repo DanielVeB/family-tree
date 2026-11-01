@@ -1,10 +1,16 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { ZodError } from 'zod'
 import App from './App'
 import i18n from './i18n'
+import * as exportHelpers from './io/exportTree'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('start tree and add a relative', () => {
   beforeEach(async () => {
@@ -75,6 +81,97 @@ describe('start tree and add a relative', () => {
       'true',
     )
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('exports the tree, marks it clean, then marks changes dirty again', async () => {
+    const user = userEvent.setup()
+    const createObjectURL = vi.fn((blob: Blob) => {
+      expect(blob).toBeInstanceOf(Blob)
+      return 'blob:family-tree'
+    })
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+
+    expect(screen.getByText('Not exported yet')).toBeInTheDocument()
+    const beforeExport = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(beforeExport)
+    expect(beforeExport.defaultPrevented).toBe(true)
+    const exportButton = screen.getByRole('button', {
+      name: 'Export tree as a file',
+    })
+    await user.click(exportButton)
+
+    expect(click).toHaveBeenCalledOnce()
+    expect(createObjectURL).toHaveBeenCalledOnce()
+    const blob = createObjectURL.mock.calls[0]![0] as Blob
+    expect(blob.type).toBe('application/json;charset=utf-8')
+    expect(screen.getByText(/^Exported at/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/^Exported as family-tree-\d{4}-\d{2}-\d{2}\.json$/),
+    ).toBeInTheDocument()
+    const downloadLink = click.mock.instances[0] as HTMLAnchorElement
+    expect(downloadLink.download).toMatch(
+      /^family-tree-\d{4}-\d{2}-\d{2}\.json$/,
+    )
+    await user.click(screen.getByRole('button', { name: 'PL' }))
+    expect(
+      screen.getByText(
+        /^Wyeksportowano jako family-tree-\d{4}-\d{2}-\d{2}\.json$/,
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/^Wyeksportowano o/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'EN' }))
+
+    const afterExport = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(afterExport)
+    expect(afterExport.defaultPrevented).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    expect(screen.getByText(/^Exported at/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+    await user.type(screen.getByLabelText('First name'), 'Jan')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByText('Changes not exported')).toBeInTheDocument()
+    const afterChange = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(afterChange)
+    expect(afterChange.defaultPrevented).toBe(true)
+    expect(revokeObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('does not download or clear the dirty status when validation fails', async () => {
+    const user = userEvent.setup()
+    const createObjectURL = vi.fn(() => 'blob:family-tree')
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() })
+    vi.spyOn(exportHelpers, 'serializeTree').mockImplementation(() => {
+      throw new ZodError([])
+    })
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+
+    expect(createObjectURL).not.toHaveBeenCalled()
+    expect(logError).toHaveBeenCalledWith(
+      'Tree validation failed before export.',
+    )
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'The file could not be created.',
+    )
+    expect(screen.getByText('Not exported yet')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Anna' })).toBeInTheDocument()
   })
 })
 

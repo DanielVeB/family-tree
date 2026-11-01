@@ -36,5 +36,14 @@
   "zoomOut": "Zoom out",
   "fitToScreen": "Fit to screen",
   "treeCanvas": "Family tree canvas",
-  "canvasControls": "Canvas controls"
+  "canvasControls": "Canvas controls",
+  "exportButton": "Export",
+  "exportButtonLabel": "Export tree as a file",
+  "exportStatusNever": "Not exported yet",
+  "exportStatusDirty": "Changes not exported",
+  "exportStatusDone": "Exported at {{time}}",
+  "exportToastTitle": "Exported as {{filename}}",
+  "exportToastPrivacy": "The file contains the names from your tree. Share it only with people you trust.",
+  "exportToastClose": "Close notification",
+  "exportError": "The file could not be created. Your tree is unchanged, please try again."
 }
