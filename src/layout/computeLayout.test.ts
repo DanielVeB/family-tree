@@ -293,10 +293,45 @@ describe('computeLayout', () => {
     expect(layout.positions.halina!.y).toBeGreaterThan(
       layout.positions.celina!.y,
     )
+    expect(
+      (layout.positions.halina!.x + layout.positions.ireneusz!.x + 200) / 2,
+    ).toBe((layout.positions.celina!.x + 200 + layout.positions.dariusz!.x) / 2)
     const familyPath = layout.edgePaths.find(
       ({ people }) => people.includes('celina') && people.includes('dariusz'),
     )
     expect(familyPath?.dots).toHaveLength(1)
+  })
+
+  it('keeps the family geometry when input nodes and edges are reversed', () => {
+    const ids = ['parent-a', 'parent-b', 'child-a', 'child-b', 'partner']
+    const edges: FamilyTree['edges'] = [
+      { from: 'parent-a', to: 'parent-b', type: 'marriage' },
+      { from: 'parent-a', to: 'child-a', type: 'child' },
+      { from: 'parent-b', to: 'child-a', type: 'child' },
+      { from: 'parent-a', to: 'child-b', type: 'child' },
+      { from: 'parent-b', to: 'child-b', type: 'child' },
+      { from: 'child-b', to: 'partner', type: 'marriage' },
+    ]
+    const forward = computeLayout(tree(ids, edges))
+    const reversed = computeLayout(
+      tree([...ids].reverse(), [...edges].reverse()),
+    )
+    for (const layout of [forward, reversed]) {
+      expect(
+        layout.positions['parent-a']!.x + layout.positions['parent-b']!.x + 200,
+      ).toBe(
+        layout.positions['child-a']!.x + layout.positions['child-b']!.x + 200,
+      )
+      const partnerGap = Math.min(
+        Math.abs(
+          layout.positions['child-b']!.x - (layout.positions.partner!.x + 200),
+        ),
+        Math.abs(
+          layout.positions.partner!.x - (layout.positions['child-b']!.x + 200),
+        ),
+      )
+      expect(partnerGap).toBe(LAYOUT_SPACING.partnerGap)
+    }
   })
 
   it('leaves a block gap between unrelated sibling groups', () => {

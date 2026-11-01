@@ -1,11 +1,4 @@
-import {
-  getChildrenOf,
-  getParentsOf,
-  getPartnersOf,
-  getSiblingsOf,
-  type FamilyTree,
-  type TreeEdge,
-} from '../model/tree'
+import { type FamilyTree, type TreeEdge } from '../model/tree'
 import { LAYOUT_SPACING } from './config'
 
 export { LAYOUT_SPACING } from './config'
@@ -50,23 +43,27 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
   const indexById = new Map(tree.nodes.map((node, index) => [node.id, index]))
   const nodeIds = new Set(indexById.keys())
   const parentByPerson = new Map(
-    tree.nodes.map((node) => [
-      node.id,
-      getParentsOf(tree, node.id).filter((id) => nodeIds.has(id)),
-    ]),
+    tree.nodes.map((node) => [node.id, [] as string[]]),
   )
   const childrenByPerson = new Map(
-    tree.nodes.map((node) => [
-      node.id,
-      getChildrenOf(tree, node.id).filter((id) => nodeIds.has(id)),
-    ]),
+    tree.nodes.map((node) => [node.id, [] as string[]]),
   )
   const partnersByPerson = new Map(
-    tree.nodes.map((node) => [
-      node.id,
-      getPartnersOf(tree, node.id).filter((id) => nodeIds.has(id)),
-    ]),
+    tree.nodes.map((node) => [node.id, [] as string[]]),
   )
+  const explicitSiblingEdges: TreeEdge[] = []
+  for (const edge of tree.edges) {
+    if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) continue
+    if (edge.type === 'child') {
+      parentByPerson.get(edge.to)!.push(edge.from)
+      childrenByPerson.get(edge.from)!.push(edge.to)
+    } else if (edge.type === 'marriage') {
+      partnersByPerson.get(edge.from)!.push(edge.to)
+      partnersByPerson.get(edge.to)!.push(edge.from)
+    } else if (edge.type === 'sibling') {
+      explicitSiblingEdges.push(edge)
+    }
+  }
 
   const rootById = new Map(tree.nodes.map((node) => [node.id, node.id]))
   const find = (id: string): string => {
@@ -89,9 +86,13 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     )
   }
 
-  for (const person of tree.nodes) {
-    const siblings = getSiblingsOf(tree, person.id)
-    siblings.forEach((sibling) => unite(person.id, sibling))
+  for (const edge of explicitSiblingEdges) {
+    unite(edge.from, edge.to)
+  }
+  for (const children of childrenByPerson.values()) {
+    for (let index = 1; index < children.length; index += 1) {
+      unite(children[0]!, children[index]!)
+    }
   }
 
   const membersByRoot = new Map<string, string[]>()
@@ -180,15 +181,47 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
       cardWidth,
     )
     let nextX: number = LAYOUT_SPACING.margin
-    const memberBlocks = row.flatMap((group) =>
-      splitSiblingGroup(group.members, parentByPerson, indexById),
+    const memberBlocks = row
+      .flatMap((group) =>
+        splitSiblingGroup(group.members, parentByPerson, indexById).map(
+          (members) => {
+            const parentIds = [
+              ...new Set(members.flatMap((id) => parentByPerson.get(id) ?? [])),
+            ]
+            const centers = parentIds
+              .map((id) => positions[id])
+              .filter((point): point is Point => Boolean(point))
+              .map((point) => point.x + cardWidth / 2)
+            return {
+              members,
+              parentAnchor: centers.length
+                ? centers.reduce((sum, center) => sum + center, 0) /
+                  centers.length
+                : undefined,
+              order:
+                row.indexOf(group) * 1000 +
+                Math.min(...members.map((id) => indexById.get(id)!)),
+            }
+          },
+        ),
+      )
+      .sort((a, b) => {
+        if (a.parentAnchor !== undefined && b.parentAnchor !== undefined) {
+          return a.parentAnchor - b.parentAnchor || a.order - b.order
+        }
+        return a.order - b.order
+      })
+    orderMarriageBlocks(memberBlocks, marriages, groupByPerson, indexById)
+    const blockIndexByPerson = new Map<string, number>()
+    memberBlocks.forEach((block, blockIndex) =>
+      block.members.forEach((id) => blockIndexByPerson.set(id, blockIndex)),
     )
     for (
       let groupIndex = 0;
       groupIndex < memberBlocks.length;
       groupIndex += 1
     ) {
-      const members = memberBlocks[groupIndex]!
+      const { members } = memberBlocks[groupIndex]!
       const parentIds = [
         ...new Set(members.flatMap((id) => parentByPerson.get(id) ?? [])),
       ]
@@ -208,9 +241,8 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
       const orderedMembers = orderMembersForPartners(
         members,
         marriages,
-        groupByPerson,
         indexById,
-        row,
+        blockIndexByPerson,
       )
       for (
         let memberIndex = 0;
@@ -240,7 +272,7 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
         const nextGroup = memberBlocks[groupIndex + 1]!
         const marriedAtBoundary = marriages.some((edge) => {
           const leftId = orderedMembers[orderedMembers.length - 1]
-          const rightId = nextGroup[0]
+          const rightId = nextGroup.members[0]
           return (
             (edge.from === leftId && edge.to === rightId) ||
             (edge.to === leftId && edge.from === rightId)
@@ -441,6 +473,8 @@ function orderRowGroups(
     if (leftAnchor !== undefined && rightAnchor !== undefined) {
       return leftAnchor - rightAnchor || a.order - b.order
     }
+    if (leftAnchor !== undefined) return -1
+    if (rightAnchor !== undefined) return 1
     return a.order - b.order
   })
   for (const group of [...row]) {
@@ -515,47 +549,105 @@ function orderRowGroups(
   }
 }
 
-function orderMembersForPartners(
-  members: string[],
+function orderMarriageBlocks(
+  blocks: Array<{ members: string[]; parentAnchor?: number; order: number }>,
   marriages: TreeEdge[],
   groupByPerson: Map<string, SiblingGroup>,
   indexById: Map<string, number>,
-  row: SiblingGroup[],
+) {
+  const orderedEdges = [...marriages].sort(
+    (a, b) =>
+      Math.min(indexById.get(a.from)!, indexById.get(a.to)!) -
+      Math.min(indexById.get(b.from)!, indexById.get(b.to)!),
+  )
+  const partnerCount = new Map<string, number>()
+  for (const edge of marriages) {
+    partnerCount.set(edge.from, (partnerCount.get(edge.from) ?? 0) + 1)
+    partnerCount.set(edge.to, (partnerCount.get(edge.to) ?? 0) + 1)
+  }
+  for (const edge of orderedEdges) {
+    if (
+      (partnerCount.get(edge.from) ?? 0) > 1 ||
+      (partnerCount.get(edge.to) ?? 0) > 1
+    ) {
+      continue
+    }
+    const fromIndex = blocks.findIndex((block) =>
+      block.members.includes(edge.from),
+    )
+    const toIndex = blocks.findIndex((block) => block.members.includes(edge.to))
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) continue
+    if (Math.abs(fromIndex - toIndex) === 1) continue
+
+    const fromGroup = groupByPerson.get(edge.from)
+    const toGroup = groupByPerson.get(edge.to)
+    const fromIsSiblingGroup = (fromGroup?.members.length ?? 0) > 1
+    const toIsSiblingGroup = (toGroup?.members.length ?? 0) > 1
+    let movingIndex = toIndex
+    let anchorIndex = fromIndex
+    if (toIsSiblingGroup && !fromIsSiblingGroup) {
+      movingIndex = fromIndex
+      anchorIndex = toIndex
+    }
+
+    const [movingBlock] = blocks.splice(movingIndex, 1)
+    if (!movingBlock) continue
+    if (movingIndex < anchorIndex) anchorIndex -= 1
+    const movedEndpoint = movingBlock.members.includes(edge.from)
+      ? edge.from
+      : edge.to
+    const anchorBlock = blocks[anchorIndex]
+    const anchorEndpoint = anchorBlock?.members.includes(edge.from)
+      ? edge.from
+      : anchorBlock?.members.includes(edge.to)
+        ? edge.to
+        : null
+    const insertBefore =
+      anchorEndpoint !== null &&
+      indexById.get(movedEndpoint)! < indexById.get(anchorEndpoint)!
+    blocks.splice(anchorIndex + (insertBefore ? 0 : 1), 0, movingBlock)
+  }
+}
+
+function orderMembersForPartners(
+  members: string[],
+  marriages: TreeEdge[],
+  indexById: Map<string, number>,
+  blockIndexByPerson: Map<string, number>,
 ): string[] {
   const ordered = [...members].sort(
     (a, b) => indexById.get(a)! - indexById.get(b)!,
   )
   if (ordered.length < 2) return ordered
-  const group = groupByPerson.get(ordered[0]!)
-  if (!group) return ordered
-  const rowIndex = row.indexOf(group)
-  const outsidePartners = marriages
-    .filter((edge) => {
-      return (
-        groupByPerson.get(edge.from) === group ||
-        groupByPerson.get(edge.to) === group
-      )
-    })
-    .map((edge) => {
-      const personId =
-        groupByPerson.get(edge.from) === group ? edge.from : edge.to
-      const partnerId = edge.from === personId ? edge.to : edge.from
-      const partnerGroup = groupByPerson.get(partnerId)
-      return { personId, partnerGroup, partnerOrder: partnerGroup?.order ?? -1 }
-    })
-    .filter(({ partnerGroup }) => partnerGroup !== group)
-    .sort((a, b) => a.partnerOrder - b.partnerOrder)
-  for (const { personId, partnerGroup } of outsidePartners) {
-    if (!partnerGroup) continue
-    const memberIndex = ordered.indexOf(personId)
-    if (memberIndex < 0) continue
-    const partnerIndex = row.indexOf(partnerGroup)
-    const moveToEnd = partnerIndex > rowIndex
-    ordered.splice(memberIndex, 1)
-    if (moveToEnd) ordered.push(personId)
-    else ordered.unshift(personId)
+  const partnerSides = new Map<string, { left: boolean; right: boolean }>()
+  for (const edge of marriages) {
+    const personId = members.includes(edge.from)
+      ? edge.from
+      : members.includes(edge.to)
+        ? edge.to
+        : null
+    if (!personId) continue
+    const partnerId = edge.from === personId ? edge.to : edge.from
+    const personBlock = blockIndexByPerson.get(personId)
+    const partnerBlock = blockIndexByPerson.get(partnerId)
+    if (personBlock === undefined || partnerBlock === undefined) continue
+    const side = partnerBlock < personBlock ? 'left' : 'right'
+    const current = partnerSides.get(personId) ?? { left: false, right: false }
+    current[side] = true
+    partnerSides.set(personId, current)
   }
-  return ordered
+  const leftPartner = ordered.find((id) => partnerSides.get(id)?.left)
+  const rightPartner = [...ordered]
+    .reverse()
+    .find((id) => partnerSides.get(id)?.right)
+  const remainder = ordered.filter(
+    (id) => id !== leftPartner && id !== rightPartner,
+  )
+  return [
+    ...(leftPartner ? [leftPartner] : []),
+    ...remainder,
+    ...(rightPartner && rightPartner !== leftPartner ? [rightPartner] : []),
+  ]
 }
 
 function collectFamilies(
@@ -576,20 +668,17 @@ function collectFamilies(
       lane: 0,
     }
     family.children.push(child.id)
-    for (const edge of tree.edges) {
-      if (
-        edge.type === 'child' &&
-        edge.to === child.id &&
-        parents.includes(edge.from)
-      ) {
-        family.edges.push(edge)
-      }
-    }
     family.generation = Math.max(
       family.generation,
       ...parents.map((id) => groupByPerson.get(id)?.generation ?? 0),
     )
     familyMap.set(key, family)
+  }
+  for (const edge of tree.edges) {
+    if (edge.type !== 'child') continue
+    const parents = [...(parentByPerson.get(edge.to) ?? [])].sort()
+    const family = familyMap.get(JSON.stringify(parents))
+    if (family) family.edges.push(edge)
   }
   return [...familyMap.values()].sort((a, b) => {
     const aFirst = Math.min(
