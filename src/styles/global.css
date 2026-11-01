@@ -30,7 +30,7 @@
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-synthesis: none;
   font-weight: 400;
-  color: var(--charcoal);
+  color: var(--oak);
   background: var(--cream);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -135,7 +135,7 @@ a:focus-visible {
   width: 7px;
   height: 7px;
   border-radius: var(--radius-pill);
-  background: var(--charcoal);
+  background: var(--oak);
   content: '';
 }
 
@@ -149,7 +149,7 @@ a:focus-visible {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--cream);
-  color: var(--charcoal);
+  color: var(--oak);
   line-height: 1.5;
 }
 
@@ -203,7 +203,7 @@ a:focus-visible {
 }
 
 .language-toggle button[aria-pressed='true'] {
-  color: var(--charcoal);
+  color: var(--oak);
   font-weight: 600;
 }
 
@@ -221,7 +221,7 @@ a:focus-visible {
 
 h1 {
   margin: 0;
-  color: var(--charcoal);
+  color: var(--oak);
   font-size: 36px;
   font-weight: 600;
   line-height: 1.1;
@@ -262,15 +262,15 @@ h1 {
 }
 
 .button--primary {
-  border-color: var(--charcoal);
-  background: var(--charcoal);
+  border-color: var(--oak);
+  background: var(--oak);
   color: var(--offwhite);
   box-shadow: var(--shadow-inset);
 }
 
 .button--ghost {
   background: transparent;
-  color: var(--charcoal);
+  color: var(--oak);
 }
 
 .tree-main {
@@ -340,7 +340,7 @@ h1 {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--cream);
-  color: var(--charcoal);
+  color: var(--oak);
   text-align: left;
   cursor: pointer;
   user-select: none;
@@ -396,7 +396,7 @@ h1 {
   border: 1px solid var(--border);
   border-radius: var(--radius-pill);
   background: var(--cream);
-  color: var(--charcoal);
+  color: var(--oak);
   font-size: 22px;
   cursor: pointer;
 }
@@ -490,7 +490,7 @@ h1 {
   flex-direction: column;
   gap: 6px;
   margin-bottom: 16px;
-  color: var(--charcoal);
+  color: var(--oak);
   font-size: 14px;
 }
 
@@ -501,7 +501,7 @@ h1 {
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--cream);
-  color: var(--charcoal);
+  color: var(--oak);
   font: inherit;
   font-size: 16px;
 }
@@ -512,7 +512,7 @@ h1 {
 }
 
 .field__error {
-  color: var(--charcoal);
+  color: var(--oak);
   font-size: 14px;
 }
 

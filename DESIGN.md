@@ -5,8 +5,8 @@ A warm, paper-like, minimal design for a family tree app that works equally well
 ## 1. Visual Theme
 
 - Warm cream page background, never pure white.
-- Near-black charcoal text, never pure black.
-- All grays are the charcoal color at different opacities, so the palette stays unified.
+- Deep dark-oak text and chocolate-brown controls, never pure black.
+- Supporting text, borders, and tree lines use softened tones of the same brown palette.
 - Cards are separated by thin warm borders, not shadows.
 - One typeface, two weights. Hierarchy comes from size and spacing.
 - Generous whitespace. No saturated accent colors.
@@ -23,28 +23,28 @@ Define these as CSS variables and use only these.
 ```css
 :root {
   --cream: #f7f4ed;            /* page + card background */
-  --charcoal: #1c1c1c;         /* text, primary button */
+  --oak: #4b3023;              /* text, primary button */
   --offwhite: #fcfbf8;         /* text on dark */
-  --muted: #5f5f5d;            /* secondary text, captions */
-  --border: #eceae4;           /* passive borders, dividers */
-  --border-strong: rgba(28, 28, 28, 0.4);  /* interactive borders */
-  --tint-hover: rgba(28, 28, 28, 0.04);    /* hover background */
-  --tint-faint: rgba(28, 28, 28, 0.03);    /* subtle fills */
-  --line: rgba(28, 28, 28, 0.4);           /* tree connector lines */
-  --ring: rgba(59, 130, 246, 0.5);         /* keyboard focus + selected person */
-  --shadow-focus: rgba(0, 0, 0, 0.1) 0 4px 12px;
+  --muted: #6b5344;            /* secondary text, captions */
+  --border: #e8dfd1;           /* passive borders, dividers */
+  --border-strong: rgba(75, 48, 35, 0.48); /* interactive borders */
+  --tint-hover: rgba(75, 48, 35, 0.05);    /* hover background */
+  --tint-faint: rgba(75, 48, 35, 0.04);    /* subtle fills */
+  --line: rgba(75, 48, 35, 0.48);          /* tree connector lines */
+  --ring: rgba(153, 103, 54, 0.58);        /* bronze keyboard focus + selection */
+  --shadow-focus: rgba(75, 48, 35, 0.14) 0 4px 12px;
   --shadow-inset:
-    rgba(255, 255, 255, 0.2) 0 0.5px 0 0 inset,
-    rgba(0, 0, 0, 0.2) 0 0 0 0.5px inset,
-    rgba(0, 0, 0, 0.05) 0 1px 2px 0;
+    rgba(252, 251, 248, 0.16) 0 0.5px 0 0 inset,
+    rgba(75, 48, 35, 0.24) 0 0 0 0.5px inset,
+    rgba(75, 48, 35, 0.08) 0 1px 2px 0;
 }
 ```
 
 | Role | Value |
 |------|-------|
 | Page background | `--cream` |
-| Headings | `--charcoal` |
-| Body text | `--muted` or charcoal at 82% |
+| Headings | `--oak` |
+| Body text | `--muted` or `--oak` |
 | Card border | `--border` |
 | Button outline | `--border-strong` |
 | Tree connector lines | `--line` |
@@ -74,14 +74,14 @@ Dates on person cards use the caption style in `--muted`, for example `1948 – 
 
 ### Buttons
 
-**Primary (dark)**: for "Add person", "Save".
-- Background `--charcoal`, text `--offwhite`
+**Primary (oak)**: for "Add person", "Save".
+- Background `--oak`, text `--offwhite`
 - Padding 8px 16px, radius 6px
 - Box-shadow `--shadow-inset` (the signature detail, keep it)
 - Active: opacity 0.8. Focus: `--shadow-focus`
 
 **Ghost**: for "Cancel", "Edit", secondary actions.
-- Transparent background, text `--charcoal`
+- Transparent background, text `--oak`
 - Border `1px solid --border-strong`, radius 6px, padding 8px 16px
 - Hover: background `--tint-hover`. Active: opacity 0.8
 
@@ -108,10 +108,10 @@ The core component of the app.
 
 ### Inputs
 
-- Background `--cream`, text `--charcoal`, placeholder `--muted`
+- Background `--cream`, text `--oak`, placeholder `--muted`
 - Border `1px solid --border`, radius 6px, padding 10px 12px, min height 44px
 - Focus: `--ring` 2px outline (no sharp black outline)
-- Labels above inputs, 14px, charcoal
+- Labels above inputs, 14px, oak
 
 ### Tree Connectors
 
@@ -166,12 +166,12 @@ Rules:
 
 ### Do
 - Use `--cream` as the foundation everywhere.
-- Derive grays from charcoal at opacity levels.
+- Use warm brown tones for text, controls, lines, and focus states.
 - Use borders for containment, not shadows.
 - Keep two weights: 400 and 600.
 - Use negative letter-spacing on headings only.
-- Use the inset shadow on primary dark buttons.
-- Use soft shadow-based focus states and the blue ring for keyboard focus.
+- Use the inset shadow on primary oak buttons.
+- Use soft shadow-based focus states and the bronze ring for keyboard focus.
 - Keep copy warm and plain ("Add a parent", "Add a child").
 
 ### Don't
