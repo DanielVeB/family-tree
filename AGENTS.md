@@ -102,6 +102,7 @@ Relationship helpers in `src/model/` define:
 Ask only when there is something to ask, and pre-select the likely answer. Keep question generation and applying answers in pure model functions; recompute defaults each time the form opens.
 - Adding a partner asks independently whether each eligible child should also be the new partner's child; these options default checked.
 - Adding a child asks about the other parent: no question for zero candidates, a checked checkbox for one, or an unselected choice list (including "No other parent") for multiple candidates.
+- When adding a child, ask whether to add an explicit sibling edge to each existing child of the selected parent; these options default checked. People who share a parent are siblings regardless of whether an explicit sibling edge is stored.
 - Adding a sibling asks about each existing parent and sibling; options default checked so users can make half-siblings by unchecking.
 - Adding a parent asks about eligible siblings (checked by default) and, when there is one existing parent, whether to connect them as a couple. The couple option defaults checked only if that parent has no partners.
 - A child already having two parents cannot receive another parent edge. Apply the primary relationship and all selected extra relationships atomically, in deterministic question order.

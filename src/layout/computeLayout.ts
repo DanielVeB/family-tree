@@ -180,7 +180,7 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
       positions,
       cardWidth,
     )
-    let nextX: number = LAYOUT_SPACING.margin
+    let preferredX: number = LAYOUT_SPACING.margin
     const memberBlocks = row
       .flatMap((group) =>
         splitSiblingGroup(group.members, parentByPerson, indexById).map(
@@ -216,12 +216,7 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     memberBlocks.forEach((block, blockIndex) =>
       block.members.forEach((id) => blockIndexByPerson.set(id, blockIndex)),
     )
-    for (
-      let groupIndex = 0;
-      groupIndex < memberBlocks.length;
-      groupIndex += 1
-    ) {
-      const { members } = memberBlocks[groupIndex]!
+    const plans = memberBlocks.map(({ members }, blockIndex) => {
       const parentIds = [
         ...new Set(members.flatMap((id) => parentByPerson.get(id) ?? [])),
       ]
@@ -229,21 +224,63 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
         .map((id) => positions[id])
         .filter((point): point is Point => Boolean(point))
         .map((point) => point.x + cardWidth / 2)
-      const groupWidth =
-        members.length * cardWidth +
-        Math.max(0, members.length - 1) * LAYOUT_SPACING.siblingGap
-      const desiredX = parentCenters.length
-        ? parentCenters.reduce((sum, center) => sum + center, 0) /
-            parentCenters.length -
-          groupWidth / 2
-        : nextX
-      nextX = Math.max(nextX, desiredX)
       const orderedMembers = orderMembersForPartners(
         members,
         marriages,
         indexById,
         blockIndexByPerson,
       )
+      let width = cardWidth * orderedMembers.length
+      for (let index = 0; index < orderedMembers.length - 1; index += 1) {
+        const first = orderedMembers[index]!
+        const second = orderedMembers[index + 1]!
+        width += (partnersByPerson.get(first) ?? []).includes(second)
+          ? LAYOUT_SPACING.partnerGap
+          : LAYOUT_SPACING.siblingGap
+      }
+      const desiredX = parentCenters.length
+        ? parentCenters.reduce((sum, center) => sum + center, 0) /
+            parentCenters.length -
+          width / 2
+        : preferredX
+      const nextMembers = memberBlocks[blockIndex + 1]?.members
+      const firstMember = orderedMembers[orderedMembers.length - 1]
+      const nextMember = nextMembers?.[0]
+      const gap =
+        firstMember &&
+        nextMember &&
+        marriages.some(
+          (edge) =>
+            (edge.from === firstMember && edge.to === nextMember) ||
+            (edge.to === firstMember && edge.from === nextMember),
+        )
+          ? LAYOUT_SPACING.partnerGap
+          : LAYOUT_SPACING.blockGap
+      preferredX = desiredX + width + gap
+      return { members: orderedMembers, width, desiredX }
+    })
+    const gaps = plans.map((plan, index) => {
+      if (index === 0) return 0
+      const previous = plans[index - 1]!
+      const previousId = previous.members[previous.members.length - 1]
+      const nextId = plan.members[0]
+      return marriages.some(
+        (edge) =>
+          (edge.from === previousId && edge.to === nextId) ||
+          (edge.to === previousId && edge.from === nextId),
+      )
+        ? LAYOUT_SPACING.partnerGap
+        : LAYOUT_SPACING.blockGap
+    })
+    const starts = placeOrderedBlocks(
+      plans.map((plan) => plan.desiredX),
+      plans.map((plan) => plan.width),
+      gaps,
+    )
+    for (let groupIndex = 0; groupIndex < plans.length; groupIndex += 1) {
+      const { members } = plans[groupIndex]!
+      let nextX = starts[groupIndex]!
+      const orderedMembers = members
       for (
         let memberIndex = 0;
         memberIndex < orderedMembers.length;
@@ -268,23 +305,23 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
               : LAYOUT_SPACING.siblingGap
             : 0)
       }
-      if (groupIndex < memberBlocks.length - 1) {
-        const nextGroup = memberBlocks[groupIndex + 1]!
-        const marriedAtBoundary = marriages.some((edge) => {
-          const leftId = orderedMembers[orderedMembers.length - 1]
-          const rightId = nextGroup.members[0]
-          return (
-            (edge.from === leftId && edge.to === rightId) ||
-            (edge.to === leftId && edge.from === rightId)
-          )
-        })
-        nextX += marriedAtBoundary
-          ? LAYOUT_SPACING.partnerGap
-          : LAYOUT_SPACING.blockGap
-      }
     }
-    maxWidth = Math.max(maxWidth, nextX + LAYOUT_SPACING.margin)
+    maxWidth = Math.max(
+      maxWidth,
+      ...plans.map(
+        (plan, index) => starts[index]! + plan.width + LAYOUT_SPACING.margin,
+      ),
+    )
   }
+
+  const leftmost = Math.min(...Object.values(positions).map((point) => point.x))
+  const horizontalShift = LAYOUT_SPACING.margin - leftmost
+  for (const point of Object.values(positions)) {
+    point.x += horizontalShift
+  }
+  maxWidth =
+    Math.max(...Object.values(positions).map((point) => point.x + cardWidth)) +
+    LAYOUT_SPACING.margin
 
   const families = collectFamilies(tree, parentByPerson, groupByPerson)
   assignLanes(families, positions, cardWidth)
@@ -440,6 +477,57 @@ function splitSiblingGroup(
   return [...blocks.values()]
     .map((block) => block.sort((a, b) => indexById.get(a)! - indexById.get(b)!))
     .sort((a, b) => indexById.get(a[0]!)! - indexById.get(b[0]!)!)
+}
+
+function placeOrderedBlocks(
+  preferredStarts: number[],
+  widths: number[],
+  gaps: number[],
+): number[] {
+  const offsets: number[] = []
+  for (let index = 0; index < preferredStarts.length; index += 1) {
+    offsets[index] =
+      index === 0 ? 0 : offsets[index - 1]! + widths[index - 1]! + gaps[index]!
+  }
+
+  const pools: Array<{
+    start: number
+    end: number
+    sum: number
+    weight: number
+  }> = []
+  for (let index = 0; index < preferredStarts.length; index += 1) {
+    pools.push({
+      start: index,
+      end: index,
+      sum: preferredStarts[index]! - offsets[index]!,
+      weight: 1,
+    })
+    while (pools.length > 1) {
+      const current = pools[pools.length - 1]!
+      const previous = pools[pools.length - 2]!
+      if (previous.sum / previous.weight <= current.sum / current.weight) {
+        break
+      }
+      pools.pop()
+      pools.pop()
+      pools.push({
+        start: previous.start,
+        end: current.end,
+        sum: previous.sum + current.sum,
+        weight: previous.weight + current.weight,
+      })
+    }
+  }
+
+  const starts = new Array<number>(preferredStarts.length)
+  for (const pool of pools) {
+    const adjusted = pool.sum / pool.weight
+    for (let index = pool.start; index <= pool.end; index += 1) {
+      starts[index] = adjusted + offsets[index]!
+    }
+  }
+  return starts
 }
 
 function maxGenerationInGroups(groups: SiblingGroup[]): number {
@@ -844,6 +932,7 @@ function getFamilyPath(
   const childCenters = childPoints.map((point) => point.x + cardWidth / 2)
   const commands: string[] = []
   const dots: Point[] = []
+  const sourceCenters: number[] = []
   const marriedParents =
     marriage && family.parents.length === 2
       ? family.parents
@@ -854,6 +943,7 @@ function getFamilyPath(
   if (marriedParents.length === 2) {
     const [left, right] = marriedParents
     const centerX = (left!.x + cardWidth + right!.x) / 2
+    sourceCenters.push(centerX)
     const centerY = left!.y + CARD_HEIGHT / 2
     const adjacent =
       right!.x - (left!.x + cardWidth) <= LAYOUT_SPACING.partnerGap
@@ -877,11 +967,13 @@ function getFamilyPath(
   } else {
     for (const parent of parentPoints) {
       const centerX = parent.x + cardWidth / 2
+      sourceCenters.push(centerX)
       commands.push(`M ${centerX} ${parent.y + CARD_HEIGHT} V ${busY}`)
     }
   }
+  const busPositions = [...sourceCenters, ...childCenters]
   commands.push(
-    `M ${childCenters[0]} ${busY} H ${childCenters[childCenters.length - 1]}`,
+    `M ${Math.min(...busPositions)} ${busY} H ${Math.max(...busPositions)}`,
   )
   for (const child of childPoints) {
     const centerX = child.x + cardWidth / 2

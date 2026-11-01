@@ -161,6 +161,7 @@ export type ConnectionQuestionGroup =
         | 'partnerChildren'
         | 'siblingParents'
         | 'siblingSiblings'
+        | 'childSiblings'
         | 'parentSiblings'
       kind: 'checkboxes'
       items: ConnectionQuestionItem[]
@@ -319,6 +320,14 @@ export function getConnectionQuestions(
         items: makeItems(candidates, false),
       })
     }
+    const siblings = getChildrenOf(tree, targetId)
+    if (siblings.length) {
+      questions.push({
+        id: 'childSiblings',
+        kind: 'checkboxes',
+        items: makeItems(siblings, true),
+      })
+    }
   } else if (relation === 'sibling') {
     const parents = getParentsOf(tree, targetId)
     const siblings = getSiblingsOf(tree, targetId)
@@ -467,7 +476,10 @@ export function addRelative(
         question.id === 'siblingParents'
       ) {
         extraEdges.push({ from: item.personId, to: person.id, type: 'child' })
-      } else if (question.id === 'siblingSiblings') {
+      } else if (
+        question.id === 'siblingSiblings' ||
+        question.id === 'childSiblings'
+      ) {
         extraEdges.push({
           from: person.id,
           to: item.personId,

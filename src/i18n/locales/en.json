@@ -42,6 +42,7 @@
   "connectPartnerLegend": "Which of {{name}}'s children are also children of the new partner?",
   "connectPartnerItem": "{{child}} is also a child of the new partner",
   "connectChildLegend": "Who is the other parent?",
+  "connectChildSiblingsLegend": "Which of {{name}}'s existing children should also be linked as siblings?",
   "connectChildNone": "No other parent",
   "connectChildError": "Choose the other parent, or \"No other parent\"",
   "connectAlsoChildOf": "Also a child of {{parent}}",

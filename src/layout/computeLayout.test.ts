@@ -147,6 +147,66 @@ describe('computeLayout', () => {
     expectNoOverlaps(layout, ids)
   })
 
+  it('centers a wide child group below its parents instead of pinning it to the row edge', () => {
+    const children = ['child-a', 'child-b', 'child-c', 'child-d', 'child-e']
+    const layout = computeLayout(
+      tree(
+        ['parent-a', 'parent-b', ...children],
+        [
+          { from: 'parent-a', to: 'parent-b', type: 'marriage' },
+          ...children.flatMap((childId) => [
+            { from: 'parent-a', to: childId, type: 'child' as const },
+            { from: 'parent-b', to: childId, type: 'child' as const },
+          ]),
+        ],
+      ),
+    )
+    const parentCenter =
+      (layout.positions['parent-a']!.x +
+        layout.positions['parent-b']!.x +
+        200) /
+      2
+    const childCenter =
+      (layout.positions['child-a']!.x + layout.positions['child-e']!.x + 200) /
+      2
+    expect(childCenter).toBe(parentCenter)
+    expectNoOverlaps(layout, ['parent-a', 'parent-b', ...children])
+  })
+
+  it('extends the children bus to the couple point when children are offset to the right', () => {
+    const layout = computeLayout(
+      tree(
+        ['parent-a', 'parent-b', 'child-a', 'child-b', 'child-partner'],
+        [
+          { from: 'parent-a', to: 'parent-b', type: 'marriage' },
+          { from: 'parent-a', to: 'child-a', type: 'child' },
+          { from: 'parent-b', to: 'child-a', type: 'child' },
+          { from: 'parent-a', to: 'child-b', type: 'child' },
+          { from: 'parent-b', to: 'child-b', type: 'child' },
+          { from: 'child-a', to: 'child-partner', type: 'marriage' },
+        ],
+      ),
+    )
+    const familyPath = layout.edgePaths.find(
+      ({ people }) => people.includes('parent-a') && people.includes('child-a'),
+    )
+    expect(familyPath).toBeDefined()
+    const couplePointX =
+      (layout.positions['parent-a']!.x +
+        200 +
+        layout.positions['parent-b']!.x) /
+      2
+    const busY = layout.positions['parent-a']!.y + 88 + LAYOUT_SPACING.lineInset
+    const childCenters = [
+      layout.positions['child-a']!.x + 100,
+      layout.positions['child-b']!.x + 100,
+    ]
+    expect(familyPath!.path).toContain(
+      `M ${Math.min(couplePointX, ...childCenters)} ${busY} H ${Math.max(couplePointX, ...childCenters)}`,
+    )
+    expect(layout.positions['child-a']!.x + 100).toBeGreaterThan(couplePointX)
+  })
+
   it('keeps a newly added partner beside the person in a sibling group', () => {
     const ids = [
       'parent-a',

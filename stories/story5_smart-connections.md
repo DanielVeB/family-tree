@@ -21,6 +21,7 @@ In story 002, adding a person creates exactly one link, to the selected person. 
 
 - A new partner is usually also a parent of the existing children.
 - A new child usually has two parents.
+- A new child is usually explicitly linked as a sibling to the selected parent's existing children.
 - A new sibling usually has the same parents as the existing sibling.
 
 Principle for this story: **most of the time the extra link is true, so it is pre-selected**, and the user can always remove it. The app asks a question **only when there is something to ask**, and asks it in the simplest form possible:
@@ -64,6 +65,8 @@ Candidates for the **other parent** = partners of S plus co-parents of S, withou
 - **0 candidates:** no question. N has one parent.
 - **1 candidate P:** one checkbox "Also a child of P", **checked**. Unchecking creates a single-parent child.
 - **2 or more candidates:** a list of choices (radio buttons): each candidate, plus **"No other parent"**. **Nothing is pre-selected**, and saving without a choice is blocked with an error message. Choosing a candidate creates `P → N`.
+- If S has existing children, show a separate checkbox for each child, "Also a sibling of [child]", **checked by default**. Each checked option creates an explicit `N — existing child` (`sibling`) edge. These are stored sibling links; even when unchecked, children who share S remain siblings according to the relationship rules in section 3.1.
+- Show the sibling checkboxes after the other-parent question. If there are no existing children, do not show this question.
 
 #### C. Add sibling to S
 Primary edge: `S — N` (`sibling`).
@@ -82,6 +85,7 @@ Two groups of questions, shown only when non-empty:
 ### 3.4 General rules
 - All answers are applied in **one atomic operation**: either everything is created or nothing. Cancel creates nothing.
 - Edge creation order is deterministic: primary edge first, then extra edges in the order the questions are displayed (top to bottom, items in list order). This keeps exported files stable.
+- For adding a child, the other-parent edge (if selected) is created before the selected sibling edges.
 - No duplicate edges, no self edges, no third parent. Violations are rejected in `model/` with a typed error, independent of the UI.
 - Defaults are computed fresh each time the form opens. Nothing is remembered between forms.
 - The UI says "partner" for a `marriage` edge (see story 002).
@@ -97,11 +101,12 @@ Each scenario is an acceptance test (section 7 refers to these IDs). Names are f
 | **P3** | Anna has no children | Add partner to Anna | No question section | None |
 | **P4** | Anna has Mia (only Anna) and Olek (Anna and Piotr) | Add partner to Anna | Mia: checked. Olek: disabled, unchecked, "Already has two parents" | Only Mia, if checked |
 | **P5** | Anna has 4 or more children | Add partner to Anna | A "Select all / Clear all" control appears above the list | Follows the selection |
-| **C1** | Anna has no partners and no co-parents | Add child to Anna | No question | Child has one parent |
-| **C2** | Anna has one partner, Piotr | Add child to Anna | One checkbox "Also a child of Piotr", checked | Checked: `Piotr → Child`. Unchecked: none |
-| **C3** | Anna has two partners, Piotr and Marek | Add child to Anna | Radio list: Piotr, Marek, "No other parent". Nothing selected. Saving now shows an error | Selected person gets `Person → Child`. "No other parent": none |
-| **C4** | Anna has one partner, Piotr, **and** a co-parent Tomek (they share child Mia, no marriage edge) | Add child to Anna | Radio list with Piotr, Tomek, and "No other parent" (two candidates) | As C3 |
-| **C5** | Anna's only link to Piotr is a shared child, Mia (no marriage edge) | Add child to Anna | One checkbox "Also a child of Piotr", checked | As C2 |
+| **C1** | Anna has no partners, co-parents, or existing children | Add child to Anna | No question | Child has one parent |
+| **C2** | Anna has one partner, Piotr, and no existing children | Add child to Anna | One checkbox "Also a child of Piotr", checked | Checked: `Piotr → Child`. Unchecked: none |
+| **C3** | Anna has two partners, Piotr and Marek, and no existing children | Add child to Anna | Radio list: Piotr, Marek, "No other parent". Nothing selected. Saving now shows an error | Selected person gets `Person → Child`. "No other parent": none |
+| **C4** | Anna has one partner, Piotr, **and** a co-parent Tomek (they share child Mia, no marriage edge) | Add child to Anna | Radio list with Piotr, Tomek, and "No other parent" (two candidates), followed by a checked sibling checkbox for Mia | As C3, then `New — Mia` (`sibling`) |
+| **C5** | Anna's only link to Piotr is a shared child, Mia (no marriage edge) | Add child to Anna | One checked checkbox "Also a child of Piotr", followed by a checked sibling checkbox for Mia | `Piotr → New`, then `New — Mia` (`sibling`) if selected |
+| **C6** | Anna has existing children Mia and Olek, and partner Piotr | Add child to Anna | Other-parent checkbox for Piotr, then sibling checkboxes for Mia and Olek, all checked | Primary edge, `Piotr → New`, then selected `New — child` sibling edges in item order |
 | **B1** | Mia has no parents and no siblings | Add sibling to Mia | No question | None |
 | **B2** | Mia has one parent, Anna | Add sibling to Mia | One checkbox "Also a child of Anna", checked | Checked: `Anna → New` |
 | **B3** | Mia has two parents, Anna and Piotr | Add sibling to Mia | Two checkboxes, both checked | Both: full sibling. One unchecked: half-sibling. Both unchecked: only the sibling link |
@@ -162,6 +167,7 @@ Names are always inserted with interpolation, never concatenated. Polish wording
 | connect.child.legend | Who is the other parent? | Kto jest drugim rodzicem? |
 | connect.child.none | No other parent | Brak drugiego rodzica |
 | connect.child.error | Choose the other parent, or "No other parent" | Wybierz drugiego rodzica lub „Brak drugiego rodzica” |
+| connect.child.siblingsLegend | Which of {{name}}'s existing children should also be linked as siblings? | Które z istniejących dzieci osoby {{name}} połączyć także relacją rodzeństwa? |
 | connect.alsoChildOf | Also a child of {{parent}} | Także dziecko osoby {{parent}} |
 | connect.sibling.parentsLegend | Parents of {{name}} | Rodzice osoby {{name}} |
 | connect.siblingsLegend | Siblings of {{name}} | Rodzeństwo osoby {{name}} |
@@ -186,7 +192,7 @@ Names are always inserted with interpolation, never concatenated. Polish wording
 
 ### Scenarios (each one is an automated model test, and the main ones are also component tests)
 - [ ] **AC8.** Scenarios **P1 to P5** (add partner) behave exactly as in the catalogue.
-- [ ] **AC9.** Scenarios **C1 to C5** (add child) behave exactly as in the catalogue.
+- [ ] **AC9.** Scenarios **C1 to C6** (add child) behave exactly as in the catalogue, including the defaulted sibling links for existing children.
 - [ ] **AC10.** Scenarios **B1 to B5** (add sibling) behave exactly as in the catalogue.
 - [ ] **AC11.** Scenarios **R1 to R7** (add parent) behave exactly as in the catalogue.
 - [ ] **AC12.** Scenario **G1**: export → import → export is byte-identical for a tree built with several of the above scenarios.
@@ -227,7 +233,7 @@ Names are always inserted with interpolation, never concatenated. Polish wording
 
 ### Quality
 - [ ] **AC37.** Unit tests cover every scenario in section 4, the two-parent limit (including rejection of a third parent at the model level), duplicate prevention, and atomicity (a failing operation leaves the tree unchanged).
-- [ ] **AC38.** A component test covers the flow: create Anna → add child Mia → add partner Piotr (check that Mia is pre-checked) → add child Olek to Anna (check that Piotr's checkbox is pre-checked) → add second partner Marek → add child to Anna (the radio list appears).
+- [ ] **AC38.** A component test covers the flow: create Anna → add child Mia → add partner Piotr (check that Mia is pre-checked) → add child Olek to Anna (check that Piotr's and Mia's checkboxes are pre-checked) → add second partner Marek → add child to Anna (the radio list appears).
 - [ ] **AC39.** Fixture files with **fictional** data for the main structures (couple with children, half-siblings, unmarried co-parents) are added for tests and for manual checking.
 - [ ] **AC40.** `npm run lint`, `npm test`, and `npm run build` pass, and deployment still works.
 - [ ] **AC41.** No real or sensitive data is added anywhere in the repo, and no network requests are made.
@@ -266,7 +272,7 @@ Names are always inserted with interpolation, never concatenated. Polish wording
 ## 12. How the Product Owner Will Verify
 
 1. Start a tree with Anna. Add child Mia. Add partner Piotr to Anna. Mia's checkbox is pre-checked. Save. Mia is drawn under both parents.
-2. Add a second child, Olek, to Anna. The form shows "Also a child of Piotr", pre-checked. Uncheck it and save. Olek has only Anna as parent.
+2. Add a second child, Olek, to Anna. The form shows "Also a child of Piotr" and "Also a sibling of Mia", both pre-checked. Uncheck Piotr and save. Olek has only Anna as parent, and the explicit sibling link to Mia is saved. Unchecking the sibling option would omit only that explicit edge; they remain siblings through Anna.
 3. Add a third partner-to-be: add partner Marek to Anna. Mia is disabled (two parents), Olek is pre-checked.
 4. Add another child to Anna. Now there are two or more other-parent candidates, so a list appears with nothing selected. Try to save without choosing, and see the error. Choose "No other parent" and save.
 5. Select Mia and add a sibling. Both parents are pre-checked, and the other siblings are pre-checked. Uncheck one parent to create a half-sibling.
