@@ -1,4 +1,8 @@
-import { type FamilyTree, type TreeEdge } from '../model/tree'
+import {
+  getConnectedParts,
+  type FamilyTree,
+  type TreeEdge,
+} from '../model/tree'
 import { LAYOUT_SPACING } from './config'
 
 export { LAYOUT_SPACING } from './config'
@@ -40,6 +44,51 @@ interface Family {
 }
 
 export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
+  const parts = getConnectedParts(tree)
+  if (parts.length === 0) {
+    return {
+      positions: {},
+      edgePaths: [],
+      width: LAYOUT_SPACING.margin * 2,
+      height: LAYOUT_SPACING.margin * 2,
+    }
+  }
+  if (parts.length > 1) {
+    let offset = 0
+    let height = 0
+    const positions: Record<string, Point> = {}
+    const edgePaths: LayoutLine[] = []
+    for (const ids of parts) {
+      const members = new Set(ids)
+      const partTree: FamilyTree = {
+        ...tree,
+        nodes: tree.nodes.filter(({ id }) => members.has(id)),
+        edges: tree.edges.filter(
+          (edge) => members.has(edge.from) && members.has(edge.to),
+        ),
+      }
+      const partLayout = computeLayout(partTree, cardWidth)
+      for (const [id, point] of Object.entries(partLayout.positions)) {
+        positions[id] = { ...point, x: point.x + offset }
+      }
+      edgePaths.push(
+        ...partLayout.edgePaths.map((line) => ({
+          ...line,
+          path: shiftPathHorizontally(line.path, offset),
+          dots: line.dots.map((dot) => ({ ...dot, x: dot.x + offset })),
+        })),
+      )
+      offset += partLayout.width + LAYOUT_SPACING.partGap
+      height = Math.max(height, partLayout.height)
+    }
+    return {
+      positions,
+      edgePaths,
+      width: offset - LAYOUT_SPACING.partGap,
+      height,
+    }
+  }
+
   const indexById = new Map(tree.nodes.map((node, index) => [node.id, index]))
   const nodeIds = new Set(indexById.keys())
   const parentByPerson = new Map(
@@ -399,7 +448,17 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     const hasSharedChild = (childrenByPerson.get(leftId) ?? []).some((child) =>
       (childrenByPerson.get(rightId) ?? []).includes(child),
     )
-    const adjacent = right.x - (left.x + cardWidth) <= LAYOUT_SPACING.partnerGap
+    const hasInterveningCard = Object.entries(positions).some(
+      ([personId, point]) =>
+        personId !== leftId &&
+        personId !== rightId &&
+        point.y === left.y &&
+        point.x < right.x &&
+        point.x + cardWidth > left.x + cardWidth,
+    )
+    const adjacent =
+      right.x - (left.x + cardWidth) <= LAYOUT_SPACING.partnerGap &&
+      !hasInterveningCard
     const lane = marriageRouting.lanes.get(edge) ?? 0
     const routeY =
       left.y +
@@ -433,6 +492,7 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     if (
       edge.type === 'child' ||
       edge.type === 'sibling' ||
+      edge.type === 'marriage' ||
       consumed.has(edge)
     ) {
       continue
@@ -461,6 +521,26 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
   }
 }
 
+function shiftPathHorizontally(path: string, offset: number): string {
+  const tokens = path.match(/[MHV]|-?(?:\d+\.?\d*|\.\d+)/g) ?? []
+  const shifted: string[] = []
+  for (let index = 0; index < tokens.length;) {
+    const command = tokens[index++]!
+    shifted.push(command)
+    if (command === 'M') {
+      shifted.push(String(Number(tokens[index++]!) + offset))
+      shifted.push(tokens[index++]!)
+    } else if (command === 'H') {
+      shifted.push(String(Number(tokens[index++]!) + offset))
+    } else if (command === 'V') {
+      shifted.push(tokens[index++]!)
+    } else {
+      throw new Error(`Unsupported layout path command: ${command}`)
+    }
+  }
+  return shifted.join(' ')
+}
+
 function splitSiblingGroup(
   members: string[],
   parentByPerson: Map<string, string[]>,
@@ -477,6 +557,49 @@ function splitSiblingGroup(
   return [...blocks.values()]
     .map((block) => block.sort((a, b) => indexById.get(a)! - indexById.get(b)!))
     .sort((a, b) => indexById.get(a[0]!)! - indexById.get(b[0]!)!)
+}
+
+function findClearDropColumn(
+  sourceX: number,
+  routeY: number,
+  busY: number,
+  family: Family,
+  positions: Record<string, Point>,
+  cardWidth: number,
+): number {
+  const related = new Set([...family.parents, ...family.children])
+  const obstacles = Object.entries(positions).filter(
+    ([id, point]) =>
+      !related.has(id) &&
+      point.y < busY + CARD_HEIGHT &&
+      point.y + CARD_HEIGHT > routeY,
+  )
+  const candidates = [
+    sourceX,
+    ...obstacles.flatMap(([, point]) => [
+      point.x - LAYOUT_SPACING.lineInset,
+      point.x + cardWidth + LAYOUT_SPACING.lineInset,
+    ]),
+  ].sort((a, b) => Math.abs(a - sourceX) - Math.abs(b - sourceX))
+
+  for (const channelX of candidates) {
+    const verticalBlocked = obstacles.some(
+      ([, point]) =>
+        channelX > point.x &&
+        channelX < point.x + cardWidth &&
+        point.y < busY &&
+        point.y + CARD_HEIGHT > routeY,
+    )
+    const horizontalBlocked = obstacles.some(([, point]) => {
+      if (routeY <= point.y || routeY >= point.y + CARD_HEIGHT) return false
+      return (
+        Math.max(Math.min(sourceX, channelX), point.x) <
+        Math.min(Math.max(sourceX, channelX), point.x + cardWidth)
+      )
+    })
+    if (!verticalBlocked && !horizontalBlocked) return channelX
+  }
+  return sourceX
 }
 
 function placeOrderedBlocks(
@@ -965,10 +1088,25 @@ function getFamilyPath(
       dots.push({ x: centerX, y: routeY })
     }
   } else {
-    for (const parent of parentPoints) {
+    for (const parentId of family.parents) {
+      const parent = positions[parentId]
+      if (!parent) continue
       const centerX = parent.x + cardWidth / 2
-      sourceCenters.push(centerX)
-      commands.push(`M ${centerX} ${parent.y + CARD_HEIGHT} V ${busY}`)
+      const routeY = parent.y + CARD_HEIGHT + LAYOUT_SPACING.lineInset
+      const channelX = findClearDropColumn(
+        centerX,
+        routeY,
+        busY,
+        family,
+        positions,
+        cardWidth,
+      )
+      sourceCenters.push(channelX)
+      commands.push(
+        `M ${centerX} ${parent.y + CARD_HEIGHT} V ${routeY}`,
+        ...(channelX === centerX ? [] : [`H ${channelX}`]),
+        `V ${busY}`,
+      )
     }
   }
   const busPositions = [...sourceCenters, ...childCenters]
@@ -977,7 +1115,25 @@ function getFamilyPath(
   )
   for (const child of childPoints) {
     const centerX = child.x + cardWidth / 2
-    commands.push(`M ${centerX} ${busY} V ${child.y}`)
+    const channelX = findClearDropColumn(
+      centerX,
+      busY,
+      child.y - LAYOUT_SPACING.lineInset,
+      family,
+      positions,
+      cardWidth,
+    )
+    commands.push(
+      `M ${centerX} ${busY}`,
+      ...(channelX === centerX ? [] : [`H ${channelX}`]),
+      ...(channelX === centerX
+        ? [`V ${child.y}`]
+        : [
+            `V ${child.y - LAYOUT_SPACING.lineInset}`,
+            `H ${centerX}`,
+            `V ${child.y}`,
+          ]),
+    )
   }
   return { path: commands.join(' '), dots }
 }

@@ -22,6 +22,10 @@ import {
   addFirstPerson,
   addRelative,
   createEmptyTree,
+  deletePerson,
+  getDisplayName,
+  TreeOperationError,
+  updatePerson,
   type ConnectionAnswers,
   type FamilyTree,
   type PersonName,
@@ -36,12 +40,26 @@ interface AppState {
   exportedAt: Date | null
   loadedFromFile: boolean
   viewKey: number
+  undo: {
+    tree: FamilyTree
+    selectedId: string | null
+    revision: number
+    exportedRevision: number | null
+    exportedAt: Date | null
+    loadedFromFile: boolean
+    hasUnexportedEditOrDelete: boolean
+  } | null
+  hasUnexportedEditOrDelete: boolean
 }
 
 type AppAction =
   | { type: 'create'; tree: FamilyTree }
   | { type: 'select'; selectedId: string | null }
   | { type: 'add-relative'; tree: FamilyTree; selectedId: string }
+  | { type: 'edit-person'; tree: FamilyTree }
+  | { type: 'delete-person'; tree: FamilyTree }
+  | { type: 'undo-delete' }
+  | { type: 'clear-undo' }
   | { type: 'export-started'; exportedAt: Date }
   | { type: 'imported'; tree: FamilyTree }
 
@@ -56,6 +74,8 @@ function reducer(state: AppState, action: AppAction): AppState {
         exportedAt: state.exportedAt,
         loadedFromFile: false,
         viewKey: state.viewKey,
+        undo: null,
+        hasUnexportedEditOrDelete: false,
       }
     case 'select':
       return { ...state, selectedId: action.selectedId }
@@ -66,13 +86,53 @@ function reducer(state: AppState, action: AppAction): AppState {
         selectedId: action.selectedId,
         revision: state.revision + 1,
         loadedFromFile: false,
+        undo: null,
       }
+    case 'edit-person':
+      if (action.tree === state.tree) return state
+      return {
+        ...state,
+        tree: action.tree,
+        revision: state.revision + 1,
+        loadedFromFile: false,
+        undo: null,
+        hasUnexportedEditOrDelete: true,
+      }
+    case 'delete-person':
+      return {
+        ...state,
+        tree: action.tree,
+        selectedId: null,
+        revision: state.revision + 1,
+        loadedFromFile: false,
+        undo: {
+          tree: state.tree,
+          selectedId: state.selectedId,
+          revision: state.revision,
+          exportedRevision: state.exportedRevision,
+          exportedAt: state.exportedAt,
+          loadedFromFile: state.loadedFromFile,
+          hasUnexportedEditOrDelete: state.hasUnexportedEditOrDelete,
+        },
+        hasUnexportedEditOrDelete: true,
+      }
+    case 'undo-delete':
+      if (!state.undo) return state
+      return {
+        ...state,
+        ...state.undo,
+        undo: null,
+        viewKey: state.viewKey + 1,
+      }
+    case 'clear-undo':
+      return state.undo ? { ...state, undo: null } : state
     case 'export-started':
       return {
         ...state,
         exportedRevision: state.revision,
         exportedAt: action.exportedAt,
         loadedFromFile: false,
+        hasUnexportedEditOrDelete: false,
       }
     case 'imported': {
       const revision = state.revision + 1
@@ -84,6 +144,8 @@ function reducer(state: AppState, action: AppAction): AppState {
         exportedAt: null,
         loadedFromFile: true,
         viewKey: state.viewKey + 1,
+        undo: null,
+        hasUnexportedEditOrDelete: false,
       }
     }
   }
@@ -99,6 +161,8 @@ function App() {
     exportedAt: null,
     loadedFromFile: false,
     viewKey: 0,
+    undo: null,
+    hasUnexportedEditOrDelete: false,
   })
   const [showNewTreeDialog, setShowNewTreeDialog] = useState(false)
   const [pendingImport, setPendingImport] = useState<FamilyTree | null>(null)
@@ -109,9 +173,14 @@ function App() {
   const exportBusyRef = useRef(false)
   const exportBusyTimeoutRef = useRef<number | null>(null)
   const exportToastTimeoutRef = useRef<number | null>(null)
+  const focusAfterTreeActionRef = useRef<'delete' | 'undo' | null>(null)
   const hasTree = state.tree.nodes.length > 0
   const exportStatus = getExportStatus(state.revision, state.exportedRevision)
-  const status = state.loadedFromFile ? 'loaded' : exportStatus
+  const status = state.loadedFromFile
+    ? 'loaded'
+    : state.hasUnexportedEditOrDelete
+      ? 'dirty'
+      : exportStatus
   const hasUnexportedChanges =
     hasTree &&
     !state.loadedFromFile &&
@@ -120,6 +189,22 @@ function App() {
   useEffect(() => {
     document.title = t('documentTitle')
   }, [i18n.language, t])
+
+  useEffect(() => {
+    const focusTarget = focusAfterTreeActionRef.current
+    if (!focusTarget) return
+    focusAfterTreeActionRef.current = null
+    window.requestAnimationFrame(() => {
+      const personId =
+        focusTarget === 'undo'
+          ? state.selectedId
+          : (state.tree.nodes[0]?.id ?? null)
+      const target = personId
+        ? document.getElementById(`person-${personId}`)
+        : document.getElementById('start-new-tree')
+      target?.focus()
+    })
+  }, [state.tree, state.selectedId])
 
   useEffect(() => {
     if (!hasUnexportedChanges) return
@@ -158,6 +243,7 @@ function App() {
   }
 
   function createTree(name: PersonName) {
+    clearToast()
     dispatch({
       type: 'create',
       tree: addFirstPerson(createEmptyTree(), name),
@@ -172,6 +258,7 @@ function App() {
     answers: ConnectionAnswers,
   ) {
     const tree = addRelative(state.tree, selectedId, relation, name, answers)
+    clearToast()
     dispatch({
       type: 'add-relative',
       tree,
@@ -179,18 +266,66 @@ function App() {
     })
   }
 
-  function showExportFeedback(filename: string | null) {
+  function editPerson(personId: string, name: PersonName): boolean {
+    const tree = updatePerson(state.tree, personId, name)
+    if (tree === state.tree) return false
+    clearToast()
+    dispatch({ type: 'edit-person', tree })
+    return true
+  }
+
+  function removePerson(personId: string) {
+    const person = state.tree.nodes.find(({ id }) => id === personId)
+    if (!person) throw new TreeOperationError('unknownPerson')
+    const name = getDisplayName(person)
+    const tree = deletePerson(state.tree, personId)
+    clearToast()
+    focusAfterTreeActionRef.current = 'delete'
+    dispatch({ type: 'delete-person', tree })
+    showToast({ kind: 'delete', name }, 10_000)
+  }
+
+  function undoDelete() {
+    if (!state.undo || toast?.kind !== 'delete') return
+    const name = toast.name
+    if (exportToastTimeoutRef.current !== null) {
+      window.clearTimeout(exportToastTimeoutRef.current)
+      exportToastTimeoutRef.current = null
+    }
+    setToast(null)
+    focusAfterTreeActionRef.current = 'undo'
+    dispatch({ type: 'undo-delete' })
+    showToast({ kind: 'restored', name }, 5000)
+  }
+
+  function clearToast() {
+    if (exportToastTimeoutRef.current !== null) {
+      window.clearTimeout(exportToastTimeoutRef.current)
+      exportToastTimeoutRef.current = null
+    }
+    setToast(null)
+  }
+
+  function showToast(message: ToastMessage, duration = 8000) {
+    if (toast?.kind === 'delete' && message.kind !== 'delete') {
+      dispatch({ type: 'clear-undo' })
+    }
     if (exportToastTimeoutRef.current !== null) {
       window.clearTimeout(exportToastTimeoutRef.current)
     }
-    setToast(
+    setToast(message)
+    exportToastTimeoutRef.current = window.setTimeout(() => {
+      exportToastTimeoutRef.current = null
+      setToast(null)
+      if (message.kind === 'delete') dispatch({ type: 'clear-undo' })
+    }, duration)
+  }
+
+  function showExportFeedback(filename: string | null) {
+    showToast(
       filename
         ? { kind: 'export-success', filename }
         : { kind: 'export-error' },
-    )
-    exportToastTimeoutRef.current = window.setTimeout(
-      () => setToast(null),
-      8000,
     )
   }
 
@@ -220,22 +355,12 @@ function App() {
     }
   }
 
-  function showImportFeedback(message: ToastMessage) {
-    if (exportToastTimeoutRef.current !== null) {
-      window.clearTimeout(exportToastTimeoutRef.current)
-    }
-    setToast(message)
-    exportToastTimeoutRef.current = window.setTimeout(
-      () => setToast(null),
-      8000,
-    )
-  }
-
   function applyImport(tree: FamilyTree) {
+    clearToast()
     dispatch({ type: 'imported', tree })
     setPendingImport(null)
     setShowNewTreeDialog(false)
-    showImportFeedback({ kind: 'import-success', count: tree.nodes.length })
+    showToast({ kind: 'import-success', count: tree.nodes.length })
   }
 
   async function importFile(file: File | undefined) {
@@ -243,7 +368,7 @@ function App() {
     try {
       const result = parseTreeFile(await file.text())
       if (!result.ok) {
-        showImportFeedback({ kind: 'import-error' })
+        showToast({ kind: 'import-error' })
         return
       }
       if (hasUnexportedChanges) {
@@ -252,7 +377,7 @@ function App() {
       }
       applyImport(result.tree)
     } catch {
-      showImportFeedback({ kind: 'import-error' })
+      showToast({ kind: 'import-error' })
     }
   }
 
@@ -347,6 +472,7 @@ function App() {
             <p>{t('welcomeDescription')}</p>
             <div className="empty-state__actions">
               <button
+                id="start-new-tree"
                 className="button button--primary"
                 type="button"
                 onClick={() => setShowNewTreeDialog(true)}
@@ -373,6 +499,8 @@ function App() {
             selectedId={state.selectedId}
             onSelect={(selectedId) => dispatch({ type: 'select', selectedId })}
             onAddRelative={createRelative}
+            onUpdatePerson={editPerson}
+            onDeletePerson={removePerson}
           />
         </main>
       )}
@@ -398,11 +526,13 @@ function App() {
       )}
       <Toast
         message={toast}
+        onUndo={undoDelete}
         onClose={() => {
           if (exportToastTimeoutRef.current !== null) {
             window.clearTimeout(exportToastTimeoutRef.current)
             exportToastTimeoutRef.current = null
           }
+          if (toast?.kind === 'delete') dispatch({ type: 'clear-undo' })
           setToast(null)
         }}
       />

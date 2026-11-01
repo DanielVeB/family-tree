@@ -164,6 +164,11 @@ a:focus-visible {
   font-size: 14px;
 }
 
+.export-toast__undo {
+  min-height: 44px;
+  margin-top: 12px;
+}
+
 .export-toast__close {
   position: absolute;
   top: 8px;
@@ -452,6 +457,27 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.detail-panel__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail-panel__heading .detail-panel__name {
+  margin-bottom: 24px;
+}
+
+.detail-danger-zone {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.detail-delete {
+  width: 100%;
+}
+
 .detail-panel h3 {
   margin: 20px 0 8px;
   font-size: 16px;
@@ -654,7 +680,7 @@ h1 {
 
 .dialog-backdrop {
   position: fixed;
-  z-index: 10;
+  z-index: 30;
   inset: 0;
   display: grid;
   align-items: center;
@@ -671,6 +697,31 @@ h1 {
 .replace-tree-dialog {
   width: min(100%, 480px);
   padding: 24px;
+}
+
+.delete-person-dialog {
+  width: min(100%, 480px);
+  padding: 24px;
+}
+
+.delete-person-dialog h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.9px;
+  overflow-wrap: anywhere;
+}
+
+.delete-person-dialog > p {
+  margin: 12px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.delete-person-dialog .form-actions {
+  margin-top: 24px;
 }
 
 .replace-tree-dialog h2 {
@@ -814,6 +865,12 @@ h1 {
   }
 
   .replace-tree-dialog {
+    align-self: end;
+    padding: 24px 16px max(24px, env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0;
+  }
+
+  .delete-person-dialog {
     align-self: end;
     padding: 24px 16px max(24px, env(safe-area-inset-bottom));
     border-radius: 16px 16px 0 0;

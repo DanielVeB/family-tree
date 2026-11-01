@@ -447,6 +447,207 @@ describe('start tree and add a relative', () => {
   })
 })
 
+describe('edit and delete people', () => {
+  beforeEach(async () => {
+    window.localStorage.clear()
+    await i18n.changeLanguage('en')
+  })
+
+  it('edits names with validation, preserves focus, and leaves no-op edits clean', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.type(screen.getByLabelText('Last name'), 'Testowa')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(screen.getByRole('button', { name: 'Anna Testowa' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+    await user.type(screen.getByLabelText('First name'), 'Mia')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Anna Testowa' }))
+    expect(screen.getByText('Not exported yet')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit Anna Testowa' }))
+    const firstName = screen.getByLabelText('First name')
+    expect(firstName).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByRole('heading', { name: 'Anna Testowa' })).toBeVisible()
+    expect(screen.getByText('Not exported yet')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit Anna Testowa' }))
+    await user.clear(screen.getByLabelText('First name'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'First name is required',
+    )
+    expect(screen.getByLabelText('First name')).toHaveAttribute(
+      'aria-invalid',
+      'true',
+    )
+    await user.type(screen.getByLabelText('First name'), 'Łucja')
+    await user.clear(screen.getByLabelText('Last name'))
+    await user.type(screen.getByLabelText('Last name'), 'Żółć')
+    await user.click(screen.getByRole('button', { name: 'PL' }))
+    expect(screen.getByLabelText('Imię')).toHaveValue('Łucja')
+    await user.click(screen.getByRole('button', { name: 'Zapisz' }))
+
+    expect(
+      await screen.findByRole('button', { name: 'Łucja Żółć' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Łucja Żółć' }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Mia' }))
+    expect(screen.getAllByText('Łucja Żółć').length).toBeGreaterThan(1)
+    expect(
+      screen.getByText('Zmiany nie zostały wyeksportowane'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Zaktualizowano imię i nazwisko'),
+    ).toBeInTheDocument()
+  })
+
+  it('confirms parent deletion, keeps child sibling links, and restores the tree with Undo', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:family-tree'),
+      revokeObjectURL: vi.fn(),
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+    await user.type(screen.getByLabelText('First name'), 'Mia')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+    expect(
+      screen.getByRole('checkbox', { name: 'Also a sibling of Mia' }),
+    ).toBeChecked()
+    await user.type(screen.getByLabelText('First name'), 'Olek')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Delete person' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Delete Anna?' })
+    expect(dialog).toHaveTextContent(
+      '2 relationships will be removed along with this person.',
+    )
+    expect(dialog).not.toHaveTextContent('split into')
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('button', { name: 'Anna' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Delete person' }),
+      ).toHaveFocus(),
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Delete person' }))
+    await user.click(screen.getByRole('button', { name: /^Delete$/ }))
+    expect(screen.queryByRole('button', { name: 'Anna' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Mia' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Olek' })).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Deleted Anna')
+    expect(screen.getByText('Changes not exported')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(
+      await screen.findByRole('heading', { name: 'Anna' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Anna' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Mia' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Olek' })).toBeInTheDocument()
+    expect(screen.getByText(/^Exported at/)).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Restored Anna')
+
+    await user.click(screen.getByRole('button', { name: 'Delete person' }))
+    await user.click(screen.getByRole('button', { name: /^Delete$/ }))
+    await user.click(screen.getByRole('button', { name: 'Mia' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+    await user.type(screen.getByLabelText('First name'), 'Jan')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
+  })
+
+  it('shows the last-person consequence and returns to the empty state', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Jan')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(screen.getByRole('button', { name: 'Jan' }))
+    await user.click(screen.getByRole('button', { name: 'Delete person' }))
+    const onlyPersonDialog = screen.getByRole('alertdialog')
+    expect(onlyPersonDialog).toHaveTextContent(
+      'This is the only person in the tree. The tree will be empty afterwards.',
+    )
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    await user.click(screen.getByRole('button', { name: 'Delete person' }))
+    await user.click(screen.getByRole('button', { name: /^Delete$/ }))
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Your family story starts here',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Export tree as a file' }),
+    ).toBeNull()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Start a new tree' }),
+      ).toHaveFocus(),
+    )
+    const beforeUnload = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(beforeUnload)
+    expect(beforeUnload.defaultPrevented).toBe(false)
+  })
+
+  it('warns when deleting a person will split the tree into parts', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const splitTree = JSON.stringify({
+      version: 1,
+      nodes: ['anna', 'mia', 'piotr', 'olek'].map((id) => ({
+        id,
+        data: { firstName: id },
+      })),
+      edges: [
+        { from: 'anna', to: 'mia', type: 'child' },
+        { from: 'piotr', to: 'olek', type: 'child' },
+        { from: 'mia', to: 'olek', type: 'marriage' },
+      ],
+    })
+    const input =
+      document.querySelector<HTMLInputElement>('input[type="file"]')!
+    fireEvent.change(input, { target: { files: [makeFile(splitTree)] } })
+    await user.click(await screen.findByRole('button', { name: 'mia' }))
+    await user.click(screen.getByRole('button', { name: 'Delete person' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Delete mia?' })
+    expect(dialog).toHaveTextContent(
+      '2 relationships will be removed along with this person.',
+    )
+    expect(dialog).toHaveTextContent(
+      'The tree will split into 2 separate parts.',
+    )
+    await user.click(screen.getByRole('button', { name: 'PL' }))
+    expect(dialog).toHaveTextContent(
+      'Drzewo rozpadnie się na 2 oddzielne części.',
+    )
+    await user.click(screen.getByRole('button', { name: 'EN' }))
+    await user.click(screen.getByRole('button', { name: /^Delete$/ }))
+    expect(screen.getByRole('button', { name: 'anna' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'piotr' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'olek' })).toBeInTheDocument()
+  })
+})
+
 function makeFile(
   text: string,
   readText: () => Promise<string> = async () => text,

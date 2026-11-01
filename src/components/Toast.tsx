@@ -5,13 +5,16 @@ export type ToastMessage =
   | { kind: 'export-error' }
   | { kind: 'import-success'; count: number }
   | { kind: 'import-error' }
+  | { kind: 'delete'; name: string }
+  | { kind: 'restored'; name: string }
 
 interface ToastProps {
   message: ToastMessage | null
   onClose: () => void
+  onUndo?: () => void
 }
 
-export default function Toast({ message, onClose }: ToastProps) {
+export default function Toast({ message, onClose, onUndo }: ToastProps) {
   const { t } = useTranslation()
   if (!message) return null
 
@@ -31,6 +34,19 @@ export default function Toast({ message, onClose }: ToastProps) {
         </p>
       ) : message.kind === 'import-success' ? (
         <p>{t('importSuccess', { count: message.count })}</p>
+      ) : message.kind === 'delete' ? (
+        <>
+          <p>{t('deleteToast', { name: message.name })}</p>
+          <button
+            className="button button--ghost export-toast__undo"
+            type="button"
+            onClick={onUndo}
+          >
+            {t('deleteUndo')}
+          </button>
+        </>
+      ) : message.kind === 'restored' ? (
+        <p>{t('deleteRestored', { name: message.name })}</p>
       ) : (
         <>
           <p>{t('exportToastTitle', { filename: message.filename })}</p>

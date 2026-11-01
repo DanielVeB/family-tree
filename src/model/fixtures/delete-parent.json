@@ -1,0 +1,17 @@
+{
+  "_note": "Fictional test fixture",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "person-anna",
+      "data": { "firstName": "Anna", "lastName": "Testowa" }
+    },
+    { "id": "person-mia", "data": { "firstName": "Mia" } },
+    { "id": "person-olek", "data": { "firstName": "Olek" } }
+  ],
+  "edges": [
+    { "from": "person-anna", "to": "person-mia", "type": "child" },
+    { "from": "person-anna", "to": "person-olek", "type": "child" },
+    { "from": "person-mia", "to": "person-olek", "type": "sibling" }
+  ]
+}

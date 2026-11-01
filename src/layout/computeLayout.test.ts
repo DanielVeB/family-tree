@@ -19,6 +19,83 @@ describe('computeLayout', () => {
     expect(layout.edgePaths).toEqual([])
   })
 
+  it('handles an empty tree', () => {
+    expect(computeLayout(tree([]))).toMatchObject({
+      positions: {},
+      edgePaths: [],
+    })
+  })
+
+  it('places disconnected parts left-to-right by creation order with aligned top rows', () => {
+    const layout = computeLayout(
+      tree(
+        ['a', 'a-child', 'b', 'c', 'c-child', 'c-grandchild'],
+        [
+          { from: 'a', to: 'a-child', type: 'child' },
+          { from: 'c', to: 'c-child', type: 'child' },
+          { from: 'c-child', to: 'c-grandchild', type: 'child' },
+          { from: 'b', to: 'c', type: 'sibling' },
+        ],
+      ),
+    )
+    const firstPartRight =
+      Math.max(layout.positions.a!.x, layout.positions['a-child']!.x) + 200
+    const secondPartLeft = Math.min(
+      layout.positions.b!.x,
+      layout.positions.c!.x,
+      layout.positions['c-child']!.x,
+      layout.positions['c-grandchild']!.x,
+    )
+    expect(layout.positions.a!.y).toBe(layout.positions.b!.y)
+    expect(secondPartLeft - firstPartRight).toBeGreaterThanOrEqual(
+      LAYOUT_SPACING.partGap,
+    )
+    expect(layout.positions.a!.x).toBeLessThan(layout.positions.b!.x)
+  })
+
+  it('keeps three separate parts and single-person parts separated', () => {
+    const layout = computeLayout(
+      tree(
+        ['first', 'second', 'third-a', 'third-b'],
+        [{ from: 'third-a', to: 'third-b', type: 'marriage' }],
+      ),
+    )
+    expect(layout.positions.first!.y).toBe(layout.positions.second!.y)
+    expect(layout.positions.first!.x).toBeLessThan(layout.positions.second!.x)
+    expect(layout.positions.second!.x).toBeLessThan(
+      layout.positions['third-a']!.x,
+    )
+    expect(layout.edgePaths).toHaveLength(1)
+  })
+
+  it('renders each marriage edge once when partners have other connections', () => {
+    const layout = computeLayout(
+      tree(
+        ['a', 'b', 'c', 'd'],
+        [
+          { from: 'a', to: 'b', type: 'marriage' },
+          { from: 'a', to: 'c', type: 'marriage' },
+          { from: 'a', to: 'd', type: 'sibling' },
+        ],
+      ),
+    )
+    const line = layout.edgePaths.find(
+      ({ edge }) =>
+        edge.type === 'marriage' &&
+        ((edge.from === 'a' && edge.to === 'c') ||
+          (edge.from === 'c' && edge.to === 'a')),
+    )
+    expect(line).toBeDefined()
+    expect(
+      layout.edgePaths.filter(
+        ({ edge }) =>
+          edge.type === 'marriage' &&
+          ((edge.from === 'a' && edge.to === 'c') ||
+            (edge.from === 'c' && edge.to === 'a')),
+      ),
+    ).toHaveLength(1)
+  })
+
   it('places parents above children with a parent-to-child path', () => {
     const layout = computeLayout(
       tree(

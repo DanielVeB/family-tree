@@ -9,12 +9,14 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import DeletePersonDialog from './DeletePersonDialog'
 import {
   computeLayout,
   LAYOUT_SPACING,
   type Point,
 } from '../layout/computeLayout'
 import {
+  getDeletePreview,
   getChildrenOf,
   getConnectionQuestions,
   getDefaultConnectionAnswers,
@@ -27,6 +29,7 @@ import {
   type FamilyTree,
   type ConnectionAnswers,
   type ConnectionQuestionGroup,
+  type DeletePreview,
   type PersonName,
   type PersonNode,
   type RelativeKind,
@@ -42,6 +45,8 @@ interface TreeViewProps {
     name: PersonName,
     answers: ConnectionAnswers,
   ) => void
+  onUpdatePerson: (personId: string, name: PersonName) => boolean
+  onDeletePerson: (personId: string) => void
 }
 
 const relationButtons: Array<{ kind: RelativeKind; label: string }> = [
@@ -64,6 +69,8 @@ export default function TreeView({
   selectedId,
   onSelect,
   onAddRelative,
+  onUpdatePerson,
+  onDeletePerson,
 }: TreeViewProps) {
   const { t } = useTranslation()
   const [cardWidth, setCardWidth] = useState(
@@ -88,6 +95,9 @@ export default function TreeView({
     viewport: typeof viewport
   } | null>(null)
   const [relativeForm, setRelativeForm] = useState<RelativeKind | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [deletePreview, setDeletePreview] = useState<DeletePreview | null>(null)
+  const [editAnnounced, setEditAnnounced] = useState(false)
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [formError, setFormError] = useState('')
@@ -100,6 +110,8 @@ export default function TreeView({
   const [connectionError, setConnectionError] = useState(false)
   const connectionChoiceRef = useRef<HTMLInputElement>(null)
   const relativeFirstNameRef = useRef<HTMLInputElement>(null)
+  const editButtonRef = useRef<HTMLButtonElement>(null)
+  const deleteButtonRef = useRef<HTMLButtonElement>(null)
   const formWasOpenRef = useRef(false)
 
   const selectedPerson = tree.nodes.find((node) => node.id === selectedId)
@@ -189,9 +201,15 @@ export default function TreeView({
     }
   }, [relativeForm, selectedId])
 
+  useEffect(() => {
+    if (editing) relativeFirstNameRef.current?.focus()
+  }, [editing])
+
   const closeDetail = useCallback(() => {
     const closingId = selectedId
     setRelativeForm(null)
+    setEditing(false)
+    setDeletePreview(null)
     onSelect(null)
     if (closingId) {
       window.requestAnimationFrame(() =>
@@ -200,9 +218,17 @@ export default function TreeView({
     }
   }, [onSelect, selectedId])
 
+  const cancelEdit = useCallback(() => {
+    setEditing(false)
+    setFormError('')
+    setFormErrorField(null)
+    window.requestAnimationFrame(() => editButtonRef.current?.focus())
+  }, [])
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
+      if (deletePreview) return
       if (relativeForm) {
         setRelativeForm(null)
         setFormError('')
@@ -213,11 +239,61 @@ export default function TreeView({
         setConnectionError(false)
         return
       }
+      if (editing) {
+        cancelEdit()
+        return
+      }
       if (selectedId) closeDetail()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [relativeForm, selectedId, closeDetail])
+  }, [
+    relativeForm,
+    editing,
+    deletePreview,
+    selectedId,
+    closeDetail,
+    cancelEdit,
+  ])
+
+  function submitEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const trimmedFirstName = firstName.trim()
+    if (!trimmedFirstName) {
+      setFormError('required')
+      setFormErrorField('firstName')
+      relativeFirstNameRef.current?.focus()
+      return
+    }
+    if (trimmedFirstName.length > 100) {
+      setFormError('tooLong')
+      setFormErrorField('firstName')
+      return
+    }
+    if (lastName.trim().length > 100) {
+      setFormError('tooLong')
+      setFormErrorField('lastName')
+      return
+    }
+    if (!selectedPerson) {
+      setFormError('unknownPerson')
+      return
+    }
+    try {
+      const changed = onUpdatePerson(selectedPerson.id, {
+        firstName: trimmedFirstName,
+        lastName: lastName.trim(),
+      })
+      setEditing(false)
+      setFormError('')
+      setFormErrorField(null)
+      setEditAnnounced(changed)
+      window.requestAnimationFrame(() => editButtonRef.current?.focus())
+    } catch (error) {
+      if (!(error instanceof TreeOperationError)) throw error
+      setFormError(error.code)
+    }
+  }
 
   function submitRelative(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -287,6 +363,8 @@ export default function TreeView({
     setFormErrorField(null)
     setFirstName('')
     setLastName('')
+    setEditing(false)
+    setEditAnnounced(false)
     setRelativeForm(kind)
   }
 
@@ -476,6 +554,8 @@ export default function TreeView({
                 width={cardWidth}
                 onSelect={() => {
                   setRelativeForm(null)
+                  setEditing(false)
+                  setDeletePreview(null)
                   setFirstName('')
                   setLastName('')
                   setFormError('')
@@ -573,9 +653,51 @@ export default function TreeView({
                 setConnectionError(false)
               }}
             />
+          ) : editing && selectedPerson ? (
+            <EditPersonForm
+              firstName={firstName}
+              lastName={lastName}
+              error={formError}
+              errorField={formErrorField}
+              firstNameRef={relativeFirstNameRef}
+              onFirstName={(value) => {
+                setFirstName(value)
+                setFormError('')
+                setFormErrorField(null)
+              }}
+              onLastName={(value) => {
+                setLastName(value)
+                setFormError('')
+                setFormErrorField(null)
+              }}
+              onSubmit={submitEdit}
+              onCancel={cancelEdit}
+            />
           ) : (
             <>
-              <h2 className="detail-panel__name">{selectedName}</h2>
+              <div className="detail-panel__heading">
+                <h2 className="detail-panel__name">{selectedName}</h2>
+                <button
+                  ref={editButtonRef}
+                  type="button"
+                  className="icon-pill"
+                  aria-label={t('editPersonLabel', { name: selectedName })}
+                  onClick={() => {
+                    if (!selectedPerson) return
+                    setFirstName(selectedPerson.data.firstName)
+                    setLastName(selectedPerson.data.lastName ?? '')
+                    setFormError('')
+                    setFormErrorField(null)
+                    setEditAnnounced(false)
+                    setEditing(true)
+                  }}
+                >
+                  <span aria-hidden="true">✎</span>
+                </button>
+              </div>
+              <span className="visually-hidden" aria-live="polite">
+                {editAnnounced ? t('editNameAnnounce') : ''}
+              </span>
               <Relations tree={tree} person={selectedPerson} />
               <h3>{t('addRelative')}</h3>
               <div className="relative-actions">
@@ -604,9 +726,38 @@ export default function TreeView({
                   {t('relativeParentDisabled', { name: selectedName })}
                 </span>
               )}
+              <div className="detail-danger-zone">
+                <button
+                  ref={deleteButtonRef}
+                  className="button button--ghost detail-delete"
+                  type="button"
+                  onClick={() => {
+                    if (selectedId) {
+                      setDeletePreview(getDeletePreview(tree, selectedId))
+                    }
+                  }}
+                >
+                  {t('deletePersonButton')}
+                </button>
+              </div>
             </>
           )}
         </aside>
+      )}
+      {selectedPerson && deletePreview && (
+        <DeletePersonDialog
+          name={selectedName}
+          preview={deletePreview}
+          isOnlyPerson={tree.nodes.length === 1}
+          onConfirm={() => {
+            onDeletePerson(selectedPerson.id)
+            setDeletePreview(null)
+          }}
+          onCancel={() => {
+            setDeletePreview(null)
+            window.requestAnimationFrame(() => deleteButtonRef.current?.focus())
+          }}
+        />
       )}
     </div>
   )
@@ -677,6 +828,103 @@ function Relations({ tree, person }: { tree: FamilyTree; person: PersonNode }) {
         )
       })}
     </div>
+  )
+}
+
+function EditPersonForm({
+  firstName,
+  lastName,
+  error,
+  errorField,
+  firstNameRef,
+  onFirstName,
+  onLastName,
+  onSubmit,
+  onCancel,
+}: {
+  firstName: string
+  lastName: string
+  error: string
+  errorField: 'firstName' | 'lastName' | null
+  firstNameRef: React.RefObject<HTMLInputElement | null>
+  onFirstName: (value: string) => void
+  onLastName: (value: string) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <h2 className="detail-panel__form-title">{t('editPersonTitle')}</h2>
+      <form className="relative-form" onSubmit={onSubmit} noValidate>
+        <div className="field">
+          <label htmlFor="edit-first-name">{t('firstName')}</label>
+          <input
+            id="edit-first-name"
+            ref={firstNameRef}
+            autoComplete="given-name"
+            maxLength={101}
+            value={firstName}
+            aria-invalid={errorField === 'firstName'}
+            aria-describedby={
+              errorField === 'firstName' ? 'edit-first-name-error' : undefined
+            }
+            onChange={(event) => onFirstName(event.target.value)}
+          />
+          {error && errorField === 'firstName' && (
+            <span
+              className="field__error"
+              id="edit-first-name-error"
+              role="alert"
+            >
+              {error === 'required'
+                ? t('firstNameRequired')
+                : t('nameTooLong', { max: 100 })}
+            </span>
+          )}
+        </div>
+        <div className="field">
+          <label htmlFor="edit-last-name">{t('lastName')}</label>
+          <input
+            id="edit-last-name"
+            autoComplete="family-name"
+            maxLength={101}
+            value={lastName}
+            aria-invalid={errorField === 'lastName'}
+            aria-describedby={
+              errorField === 'lastName' ? 'edit-last-name-error' : undefined
+            }
+            onChange={(event) => onLastName(event.target.value)}
+          />
+          {error && errorField === 'lastName' && (
+            <span
+              className="field__error"
+              id="edit-last-name-error"
+              role="alert"
+            >
+              {t('nameTooLong', { max: 100 })}
+            </span>
+          )}
+        </div>
+        <div className="form-actions">
+          <button className="button button--primary" type="submit">
+            {t('save')}
+          </button>
+          <button
+            className="button button--ghost"
+            type="button"
+            onClick={onCancel}
+          >
+            {t('cancel')}
+          </button>
+        </div>
+        {error && errorField === null && (
+          <p className="field__error" role="alert">
+            {t('editSaveError')}
+          </p>
+        )}
+      </form>
+    </>
   )
 }
 

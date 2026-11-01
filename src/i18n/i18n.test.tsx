@@ -38,6 +38,21 @@ describe('translations', () => {
       'importSuccess_one',
       'importSuccess_other',
     ])
+    expect(
+      Object.keys(en)
+        .filter((key) => key.startsWith('deleteRelations_'))
+        .sort(),
+    ).toEqual(['deleteRelations_one', 'deleteRelations_other'])
+    expect(
+      Object.keys(pl)
+        .filter((key) => key.startsWith('deleteRelations_'))
+        .sort(),
+    ).toEqual([
+      'deleteRelations_few',
+      'deleteRelations_many',
+      'deleteRelations_one',
+      'deleteRelations_other',
+    ])
   })
 
   it('uses the correct English and Polish import success plurals', async () => {
@@ -53,6 +68,32 @@ describe('translations', () => {
       'Wczytano 2 osoby',
       'Wczytano 5 osób',
       'Wczytano 22 osoby',
+    ])
+    await i18n.changeLanguage('en')
+  })
+
+  it('uses the correct relationship count plurals in English and Polish', async () => {
+    await i18n.changeLanguage('en')
+    expect(
+      [0, 1, 2, 5, 12, 22].map((count) => i18n.t('deleteRelations', { count })),
+    ).toEqual([
+      '0 relationships will be removed along with this person.',
+      '1 relationship will be removed along with this person.',
+      '2 relationships will be removed along with this person.',
+      '5 relationships will be removed along with this person.',
+      '12 relationships will be removed along with this person.',
+      '22 relationships will be removed along with this person.',
+    ])
+    await i18n.changeLanguage('pl')
+    expect(
+      [0, 1, 2, 5, 12, 22].map((count) => i18n.t('deleteRelations', { count })),
+    ).toEqual([
+      'Wraz z tą osobą zostanie usuniętych 0 relacji.',
+      'Wraz z tą osobą zostanie usunięta 1 relacja.',
+      'Wraz z tą osobą zostaną usunięte 2 relacje.',
+      'Wraz z tą osobą zostanie usuniętych 5 relacji.',
+      'Wraz z tą osobą zostanie usuniętych 12 relacji.',
+      'Wraz z tą osobą zostaną usunięte 22 relacje.',
     ])
     await i18n.changeLanguage('en')
   })

@@ -3,6 +3,7 @@ export const LAYOUT_SPACING = {
   partnerGap: 32,
   siblingGap: 24,
   blockGap: 64,
+  partGap: 96,
   rowGap: 96,
   laneSpacing: 8,
   margin: 40,

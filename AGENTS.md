@@ -106,6 +106,11 @@ Ask only when there is something to ask, and pre-select the likely answer. Keep 
 - Adding a sibling asks about each existing parent and sibling; options default checked so users can make half-siblings by unchecking.
 - Adding a parent asks about eligible siblings (checked by default) and, when there is one existing parent, whether to connect them as a couple. The couple option defaults checked only if that parent has no partners.
 - A child already having two parents cannot receive another parent edge. Apply the primary relationship and all selected extra relationships atomically, in deterministic question order.
+- The tree may contain multiple disconnected parts or be empty. A part is a connected component across all relationship types; layout keeps each part intact, orders parts by their earliest-created person, aligns their top rows, and leaves at least 96px between parts.
+
+### Editing and destructive actions
+- `updatePerson` and `deletePerson` are pure model operations. Editing changes only trimmed first and last names and preserves unknown data. Deleting a person removes every incident edge and never changes links between other people.
+- Confirm destructive actions with a clear summary of consequences, choose a safe default when possible, and offer a single-step Undo for deletion. Undo restores the exact tree and change status, and expires when the toast closes or another tree change occurs.
 
 ## 6. Core Features (v1 scope)
 

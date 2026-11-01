@@ -123,6 +123,37 @@ export function getDisplayName(person: PersonNode): string {
     .join(' ')
 }
 
+export function getConnectedParts(tree: FamilyTree): string[][] {
+  const adjacency = new Map(tree.nodes.map(({ id }) => [id, [] as string[]]))
+  for (const edge of tree.edges) {
+    adjacency.get(edge.from)?.push(edge.to)
+    adjacency.get(edge.to)?.push(edge.from)
+  }
+  const visited = new Set<string>()
+  const parts: string[][] = []
+  for (const { id } of tree.nodes) {
+    if (visited.has(id)) continue
+    const part: string[] = []
+    const queue = [id]
+    visited.add(id)
+    for (let index = 0; index < queue.length; index += 1) {
+      const current = queue[index]!
+      part.push(current)
+      for (const neighbor of adjacency.get(current) ?? []) {
+        if (visited.has(neighbor)) continue
+        visited.add(neighbor)
+        queue.push(neighbor)
+      }
+    }
+    parts.push(part)
+  }
+  return parts
+}
+
+export function countConnectedParts(tree: FamilyTree): number {
+  return getConnectedParts(tree).length
+}
+
 export type TreeOperationErrorCode =
   | 'emptyFirstName'
   | 'nameTooLong'
@@ -396,14 +427,84 @@ export function getDefaultConnectionAnswers(
   return { checked, choice: null }
 }
 
-function makePerson(name: PersonName): PersonNode {
+function normalizePersonName(name: PersonName): PersonName {
   const firstName = name.firstName.trim()
   const lastName = name.lastName?.trim() ?? ''
   if (!firstName) throw new TreeOperationError('emptyFirstName')
   if (firstName.length > 100 || lastName.length > 100) {
     throw new TreeOperationError('nameTooLong')
   }
-  return { id: crypto.randomUUID(), data: { firstName, lastName } }
+  return { firstName, lastName }
+}
+
+function makePerson(name: PersonName): PersonNode {
+  const normalized = normalizePersonName(name)
+  return {
+    id: crypto.randomUUID(),
+    data: {
+      firstName: normalized.firstName,
+      lastName: normalized.lastName,
+    },
+  }
+}
+
+export function updatePerson(
+  tree: FamilyTree,
+  personId: string,
+  name: PersonName,
+): FamilyTree {
+  const personIndex = tree.nodes.findIndex(({ id }) => id === personId)
+  if (personIndex === -1) throw new TreeOperationError('unknownPerson')
+  const normalized = normalizePersonName(name)
+  const currentPerson = tree.nodes[personIndex]!
+  if (
+    currentPerson.data.firstName === normalized.firstName &&
+    (currentPerson.data.lastName ?? '') === normalized.lastName
+  ) {
+    return tree
+  }
+  const nodes = [...tree.nodes]
+  nodes[personIndex] = {
+    ...currentPerson,
+    data: {
+      ...currentPerson.data,
+      firstName: normalized.firstName,
+      lastName: normalized.lastName,
+    },
+  }
+  return { ...tree, nodes }
+}
+
+export function deletePerson(tree: FamilyTree, personId: string): FamilyTree {
+  if (!tree.nodes.some(({ id }) => id === personId)) {
+    throw new TreeOperationError('unknownPerson')
+  }
+  return {
+    ...tree,
+    nodes: tree.nodes.filter(({ id }) => id !== personId),
+    edges: tree.edges.filter(
+      (edge) => edge.from !== personId && edge.to !== personId,
+    ),
+  }
+}
+
+export interface DeletePreview {
+  relationshipCount: number
+  partCount: number
+}
+
+export function getDeletePreview(
+  tree: FamilyTree,
+  personId: string,
+): DeletePreview {
+  if (!tree.nodes.some(({ id }) => id === personId)) {
+    throw new TreeOperationError('unknownPerson')
+  }
+  const deletedTree = deletePerson(tree, personId)
+  return {
+    relationshipCount: tree.edges.length - deletedTree.edges.length,
+    partCount: countConnectedParts(deletedTree),
+  }
 }
 
 export function addFirstPerson(tree: FamilyTree, name: PersonName): FamilyTree {

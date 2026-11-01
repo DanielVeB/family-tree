@@ -1,0 +1,16 @@
+{
+  "_note": "Fictional test fixture",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "person-anna",
+      "data": {
+        "firstName": "Anna",
+        "lastName": "Testowa",
+        "customNote": "Fictional field to verify forward compatibility"
+      },
+      "customNodeField": "preserved"
+    }
+  ],
+  "edges": []
+}
