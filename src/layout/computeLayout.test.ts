@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeLayout } from './computeLayout'
+import { computeLayout, LAYOUT_SPACING } from './computeLayout'
 import type { FamilyTree } from '../model/tree'
 
 const person = (id: string) => ({
@@ -36,7 +36,9 @@ describe('computeLayout', () => {
       tree(['one', 'two'], [{ from: 'one', to: 'two', type: 'sibling' }]),
     )
     expect(layout.positions.one!.y).toBe(layout.positions.two!.y)
-    expect(layout.positions.two!.x - layout.positions.one!.x).toBe(240)
+    expect(layout.positions.two!.x - layout.positions.one!.x).toBe(
+      200 + LAYOUT_SPACING.siblingGap,
+    )
     expect(layout.edgePaths[0]!.path).toContain('V')
   })
 
@@ -58,8 +60,11 @@ describe('computeLayout', () => {
     )
     expect(
       layout.positions['parent-b']!.x - layout.positions['parent-a']!.x,
-    ).toBe(240)
-    expect(layout.positions['child-a']!.x + 100).toBe(
+    ).toBe(200 + LAYOUT_SPACING.partnerGap)
+    expect(
+      (layout.positions['child-a']!.x + layout.positions['child-b']!.x + 200) /
+        2,
+    ).toBe(
       (layout.positions['parent-a']!.x +
         layout.positions['parent-b']!.x +
         200) /
@@ -134,16 +139,23 @@ describe('computeLayout', () => {
       ]),
     )
     expect(layout.edgePaths).toHaveLength(1)
-    expect(layout.edgePaths[0]!.path.match(/M /g)).toHaveLength(7)
+    expect(layout.edgePaths[0]!.path.match(/M /g)).toHaveLength(6)
     const secondParent = layout.positions['parent-b']!
     expect(layout.edgePaths[0]!.path).toContain(
-      `M ${secondParent.x + 100} ${secondParent.y + 88} V ${secondParent.y + 104}`,
+      `M ${(layout.positions['parent-a']!.x + 200 + secondParent.x) / 2} ${secondParent.y + 44} V`,
     )
     expectNoOverlaps(layout, ids)
   })
 
   it('keeps a newly added partner beside the person in a sibling group', () => {
-    const ids = ['parent-a', 'parent-b', 'child-a', 'child-b', 'child-c', 'partner']
+    const ids = [
+      'parent-a',
+      'parent-b',
+      'child-a',
+      'child-b',
+      'child-c',
+      'partner',
+    ]
     const layout = computeLayout(
       tree(ids, [
         { from: 'parent-a', to: 'parent-b', type: 'marriage' },
@@ -157,9 +169,9 @@ describe('computeLayout', () => {
       ]),
     )
 
-    expect(layout.positions.partner!.x - layout.positions['child-a']!.x).toBe(
-      240,
-    )
+    expect(
+      layout.positions.partner!.x - (layout.positions['child-a']!.x + 200),
+    ).toBe(LAYOUT_SPACING.partnerGap)
   })
 
   it('keeps half-siblings attached below their respective parents', () => {
@@ -176,7 +188,21 @@ describe('computeLayout', () => {
     )
     expect(layout.positions.anna!.y).toBe(layout.positions.piotr!.y)
     expect(layout.positions.piotr!.y).toBe(layout.positions.marek!.y)
+    expect(layout.positions.anna!.x - (layout.positions.piotr!.x + 200)).toBe(
+      LAYOUT_SPACING.partnerGap,
+    )
+    expect(layout.positions.marek!.x - (layout.positions.anna!.x + 200)).toBe(
+      LAYOUT_SPACING.partnerGap,
+    )
     expect(layout.positions.mia!.y).toBe(layout.positions.olek!.y)
+    expect(
+      layout.positions.olek!.x - (layout.positions.mia!.x + 200),
+    ).toBeGreaterThanOrEqual(LAYOUT_SPACING.blockGap)
+    expect(
+      layout.edgePaths.filter(
+        ({ people }) => people.includes('mia') || people.includes('olek'),
+      ),
+    ).toHaveLength(2)
     expect(layout.positions.mia!.x).not.toBe(layout.positions.olek!.x)
     expectNoOverlaps(layout, ids)
     expect(layout.edgePaths.every(({ path }) => path.length > 0)).toBe(true)
@@ -217,6 +243,75 @@ describe('computeLayout', () => {
     expect(extended.positions.c).toEqual(initial.positions.c)
     const xPositions = Object.values(extended.positions).map(({ x }) => x)
     expect(new Set(xPositions).size).toBe(xPositions.length)
+  })
+
+  it('keeps two sibling groups visibly separate while joining their families at the couple', () => {
+    const ids = [
+      'jan',
+      'maria',
+      'adam',
+      'beata',
+      'celina',
+      'dariusz',
+      'edward',
+      'francis',
+      'halina',
+      'ireneusz',
+    ]
+    const childEdges = ['adam', 'beata', 'celina'].flatMap((childId) => [
+      { from: 'jan', to: childId, type: 'child' as const },
+      { from: 'maria', to: childId, type: 'child' as const },
+    ])
+    const layout = computeLayout(
+      tree(ids, [
+        { from: 'jan', to: 'maria', type: 'marriage' },
+        ...childEdges,
+        { from: 'adam', to: 'beata', type: 'sibling' },
+        { from: 'beata', to: 'celina', type: 'sibling' },
+        { from: 'celina', to: 'dariusz', type: 'marriage' },
+        { from: 'dariusz', to: 'edward', type: 'sibling' },
+        { from: 'edward', to: 'francis', type: 'marriage' },
+        { from: 'celina', to: 'halina', type: 'child' },
+        { from: 'dariusz', to: 'halina', type: 'child' },
+        { from: 'celina', to: 'ireneusz', type: 'child' },
+        { from: 'dariusz', to: 'ireneusz', type: 'child' },
+      ]),
+    )
+    const rowOne = ['adam', 'beata', 'celina', 'dariusz', 'edward', 'francis']
+    expect(rowOne.map((id) => layout.positions[id]!.x)).toEqual(
+      [...rowOne.map((id) => layout.positions[id]!.x)].sort((a, b) => a - b),
+    )
+    expect(
+      layout.positions.dariusz!.x - (layout.positions.celina!.x + 200),
+    ).toBe(LAYOUT_SPACING.partnerGap)
+    expect(
+      layout.positions.edward!.x - (layout.positions.dariusz!.x + 200),
+    ).toBe(LAYOUT_SPACING.siblingGap)
+    expect(
+      layout.positions.francis!.x - (layout.positions.edward!.x + 200),
+    ).toBe(LAYOUT_SPACING.partnerGap)
+    expect(layout.positions.halina!.y).toBeGreaterThan(
+      layout.positions.celina!.y,
+    )
+    const familyPath = layout.edgePaths.find(
+      ({ people }) => people.includes('celina') && people.includes('dariusz'),
+    )
+    expect(familyPath?.dots).toHaveLength(1)
+  })
+
+  it('leaves a block gap between unrelated sibling groups', () => {
+    const layout = computeLayout(
+      tree(
+        ['a', 'b', 'c', 'd'],
+        [
+          { from: 'a', to: 'b', type: 'sibling' },
+          { from: 'c', to: 'd', type: 'sibling' },
+        ],
+      ),
+    )
+    expect(
+      layout.positions.c!.x - (layout.positions.b!.x + 200),
+    ).toBeGreaterThanOrEqual(LAYOUT_SPACING.blockGap)
   })
 })
 
