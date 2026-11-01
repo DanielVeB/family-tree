@@ -134,7 +134,11 @@ describe('computeLayout', () => {
       ]),
     )
     expect(layout.edgePaths).toHaveLength(1)
-    expect(layout.edgePaths[0]!.path.match(/M /g)).toHaveLength(6)
+    expect(layout.edgePaths[0]!.path.match(/M /g)).toHaveLength(7)
+    const secondParent = layout.positions['parent-b']!
+    expect(layout.edgePaths[0]!.path).toContain(
+      `M ${secondParent.x + 100} ${secondParent.y + 88} V ${secondParent.y + 104}`,
+    )
     expectNoOverlaps(layout, ids)
   })
 

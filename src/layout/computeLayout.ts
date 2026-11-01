@@ -276,6 +276,7 @@ function getFamilyPath(
   const childCenters = children.map((point) => point.x + cardWidth / 2)
   const commands = [
     `M ${parentCenters[0]} ${parents[0]!.y + CARD_HEIGHT} V ${parentJoinY} H ${parentCenters[1]}`,
+    `M ${parentCenters[1]} ${parents[1]!.y + CARD_HEIGHT} V ${parentJoinY}`,
     `M ${familyCenterX} ${parentJoinY} V ${childJoinY} H ${childCenters[0]}`,
   ]
   for (const child of children) {
