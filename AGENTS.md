@@ -187,13 +187,25 @@ Out of scope for v1 (do not build unless asked): accounts, cloud sync, collabora
    └─ sample/               # fake sample data only
 ```
 
+## Tree Layout
+
+- The pure layout implementation lives in `src/layout/`; keep layout decisions out of React components. `computeLayout` is memoized by the tree and card width; selection changes only line styling.
+- Build sibling groups from explicit sibling relationships and shared parents. Marriage does not make two people siblings or merge their sibling groups.
+- Keep each sibling group contiguous. Place outside partners beside their partner when possible, and keep each partner's sibling group distinct. Order parented groups by their parents' left-to-right position, then creation order for ties; order top-level groups by creation order.
+- Keep partner cards adjacent where possible. If two sibling groups are joined by a marriage, keep the couple at their shared edge and show the couple line in the space between them.
+- Keep children of each exact parent set in their own block, centered under their couple point or single parent when space allows. Half-sibling groups from different couples remain separate.
+- Use grouped child buses and one bracket per explicit sibling group without a shared-parent bus. Do not draw pairwise sibling lines for children already grouped by a parent bus.
+- Draw orthogonal relationship lines that never pass through an unrelated card. Use separate horizontal lanes for overlapping routes; selected people's relationship lines use `--oak` and a thicker stroke, without moving the layout.
+- Keep spacing in `src/layout/config.ts`: partner gap 32px, sibling gap 24px, block gap at least 64px, row gap at least 96px, and lane spacing 8px. Increase row gaps when routes need more lanes.
+- Geometric invariants: cards do not overlap; lines attach only at their related card edges; unrelated routes do not overlap or run parallel closer than 8px; every relationship is represented once; the same tree produces the same layout.
+
 Principles:
 - Keep `model/` pure TypeScript with **no React imports**. All add/delete/edit logic lives here and is unit-tested.
 - Components stay small and presentational; business rules do not live in components.
 
 ## 10. Repository Hygiene and Privacy Safeguards
 
-- Add to `.gitignore`: `*.family.json`, `my-tree*.json`, `exports/`, `.env*`, and any local test data folders. Real data files should never be committable by accident.
+- Add to `.gitignore`: `*.family.json`, `my-tree*.json`, `family-tree-*.json`, `exports/`, `.env*`, and any local test data folders. Real data files should never be committable by accident.
 - Only fake data in `src/sample/` and in tests. Mark sample files clearly (for example a `"_note": "Fictional sample data"` field).
 - Do not commit screenshots containing real names.
 - No secrets exist in this project. If something looks like one, remove it.

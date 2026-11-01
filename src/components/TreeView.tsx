@@ -9,7 +9,11 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { computeLayout, type Point } from '../layout/computeLayout'
+import {
+  computeLayout,
+  LAYOUT_SPACING,
+  type Point,
+} from '../layout/computeLayout'
 import {
   getChildrenOf,
   getConnectionQuestions,
@@ -140,7 +144,7 @@ export default function TreeView({
             const left = x + point.x * current.scale
             const top = y + point.y * current.scale
             const right = left + cardWidth * current.scale
-            const bottom = top + 88 * current.scale
+            const bottom = top + LAYOUT_SPACING.cardHeight * current.scale
             if (right > width - 24) x -= right - width + 24
             if (left < 24) x += 24 - left
             if (bottom > height - 24) y -= bottom - height + 24
@@ -437,12 +441,29 @@ export default function TreeView({
             height={layout.height}
             aria-hidden="true"
           >
-            {layout.edgePaths.map(({ edge, path }, index) => (
-              <path
-                key={`${edge.type}-${edge.from}-${edge.to}-${index}`}
-                d={path}
-              />
-            ))}
+            {layout.edgePaths.map(({ edge, path, people, dots }, index) => {
+              const highlighted =
+                selectedId !== null && people.includes(selectedId)
+              const key = `${edge.type}-${edge.from}-${edge.to}-${index}`
+              return (
+                <g
+                  key={key}
+                  className={
+                    highlighted ? 'tree-line-group--selected' : undefined
+                  }
+                >
+                  <path d={path} />
+                  {dots.map((dot, dotIndex) => (
+                    <circle
+                      key={`${key}-dot-${dotIndex}`}
+                      cx={dot.x}
+                      cy={dot.y}
+                      r="3"
+                    />
+                  ))}
+                </g>
+              )
+            })}
           </svg>
           {tree.nodes.map((person) => {
             const point = layout.positions[person.id]

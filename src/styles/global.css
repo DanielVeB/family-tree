@@ -328,6 +328,20 @@ h1 {
   vector-effect: non-scaling-stroke;
 }
 
+.tree-lines circle {
+  fill: var(--line);
+  vector-effect: non-scaling-stroke;
+}
+
+.tree-lines .tree-line-group--selected path {
+  stroke: var(--oak);
+  stroke-width: 2px;
+}
+
+.tree-lines .tree-line-group--selected circle {
+  fill: var(--oak);
+}
+
 .person-card {
   position: absolute;
   z-index: 1;
