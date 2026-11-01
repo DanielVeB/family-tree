@@ -467,6 +467,9 @@ describe('edit and delete people', () => {
     await user.click(screen.getByRole('button', { name: 'Anna Testowa' }))
     expect(screen.getByText('Not exported yet')).toBeInTheDocument()
 
+    expect(
+      screen.getByRole('button', { name: 'Edit Anna Testowa' }),
+    ).toHaveAttribute('title', 'Edit Anna Testowa')
     await user.click(screen.getByRole('button', { name: 'Edit Anna Testowa' }))
     const firstName = screen.getByLabelText('First name')
     expect(firstName).toHaveFocus()
@@ -535,6 +538,9 @@ describe('edit and delete people', () => {
       screen.getByRole('button', { name: 'Export tree as a file' }),
     )
     await user.click(screen.getByRole('button', { name: 'Delete person' }))
+    expect(
+      screen.getByRole('button', { name: 'Delete person' }),
+    ).toHaveAttribute('title', 'Delete person')
     const dialog = screen.getByRole('alertdialog', { name: 'Delete Anna?' })
     expect(dialog).toHaveTextContent(
       '2 relationships will be removed along with this person.',

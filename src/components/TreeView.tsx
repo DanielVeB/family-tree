@@ -675,26 +675,7 @@ export default function TreeView({
             />
           ) : (
             <>
-              <div className="detail-panel__heading">
-                <h2 className="detail-panel__name">{selectedName}</h2>
-                <button
-                  ref={editButtonRef}
-                  type="button"
-                  className="icon-pill"
-                  aria-label={t('editPersonLabel', { name: selectedName })}
-                  onClick={() => {
-                    if (!selectedPerson) return
-                    setFirstName(selectedPerson.data.firstName)
-                    setLastName(selectedPerson.data.lastName ?? '')
-                    setFormError('')
-                    setFormErrorField(null)
-                    setEditAnnounced(false)
-                    setEditing(true)
-                  }}
-                >
-                  <span aria-hidden="true">✎</span>
-                </button>
-              </div>
+              <h2 className="detail-panel__name">{selectedName}</h2>
               <span className="visually-hidden" aria-live="polite">
                 {editAnnounced ? t('editNameAnnounce') : ''}
               </span>
@@ -728,16 +709,48 @@ export default function TreeView({
               )}
               <div className="detail-danger-zone">
                 <button
-                  ref={deleteButtonRef}
-                  className="button button--ghost detail-delete"
+                  ref={editButtonRef}
                   type="button"
+                  className="icon-pill"
+                  aria-label={t('editPersonLabel', { name: selectedName })}
+                  title={t('editPersonLabel', { name: selectedName })}
+                  onClick={() => {
+                    if (!selectedPerson) return
+                    setFirstName(selectedPerson.data.firstName)
+                    setLastName(selectedPerson.data.lastName ?? '')
+                    setFormError('')
+                    setFormErrorField(null)
+                    setEditAnnounced(false)
+                    setEditing(true)
+                  }}
+                >
+                  <span aria-hidden="true">✎</span>
+                </button>
+                <button
+                  ref={deleteButtonRef}
+                  className="icon-pill"
+                  type="button"
+                  aria-label={t('deletePersonButton')}
+                  title={t('deletePersonButton')}
                   onClick={() => {
                     if (selectedId) {
                       setDeletePreview(getDeletePreview(tree, selectedId))
                     }
                   }}
                 >
-                  {t('deletePersonButton')}
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    width="20"
+                    height="20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M3 6h18M8 6V4h8v2m3 0-.9 14H5.9L5 6m5 4v6m4-6v6" />
+                  </svg>
                 </button>
               </div>
             </>

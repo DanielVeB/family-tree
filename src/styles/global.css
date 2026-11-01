@@ -457,25 +457,13 @@ h1 {
   overflow-wrap: anywhere;
 }
 
-.detail-panel__heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.detail-panel__heading .detail-panel__name {
-  margin-bottom: 24px;
-}
-
 .detail-danger-zone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-top: 24px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
-}
-
-.detail-delete {
-  width: 100%;
 }
 
 .detail-panel h3 {
