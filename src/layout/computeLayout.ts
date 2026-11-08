@@ -21,6 +21,15 @@ export interface LayoutLine {
 
 export interface LayoutResult {
   positions: Record<string, Point>
+  cardCenters: Record<string, Point>
+  rowBands: Array<{
+    layer: number
+    left: number
+    top: number
+    width: number
+    height: number
+    personIds: string[]
+  }>
   edgePaths: LayoutLine[]
   width: number
   height: number
@@ -48,6 +57,8 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
   if (parts.length === 0) {
     return {
       positions: {},
+      cardCenters: {},
+      rowBands: [],
       edgePaths: [],
       width: LAYOUT_SPACING.margin * 2,
       height: LAYOUT_SPACING.margin * 2,
@@ -57,6 +68,8 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     let offset = 0
     let height = 0
     const positions: Record<string, Point> = {}
+    const cardCenters: Record<string, Point> = {}
+    const rowBands: LayoutResult['rowBands'] = []
     const edgePaths: LayoutLine[] = []
     for (const ids of parts) {
       const members = new Set(ids)
@@ -70,7 +83,17 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
       const partLayout = computeLayout(partTree, cardWidth)
       for (const [id, point] of Object.entries(partLayout.positions)) {
         positions[id] = { ...point, x: point.x + offset }
+        cardCenters[id] = {
+          x: point.x + offset + cardWidth / 2,
+          y: point.y + CARD_HEIGHT / 2,
+        }
       }
+      rowBands.push(
+        ...partLayout.rowBands.map((band) => ({
+          ...band,
+          left: band.left + offset,
+        })),
+      )
       edgePaths.push(
         ...partLayout.edgePaths.map((line) => ({
           ...line,
@@ -83,13 +106,24 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     }
     return {
       positions,
+      cardCenters,
+      rowBands,
       edgePaths,
       width: offset - LAYOUT_SPACING.partGap,
       height,
     }
   }
 
-  const indexById = new Map(tree.nodes.map((node, index) => [node.id, index]))
+  const creationIndex = new Map(
+    tree.nodes.map((node, index) => [node.id, index]),
+  )
+  const layoutOrder = [...tree.nodes].sort(
+    (a, b) =>
+      a.metaData.layer - b.metaData.layer ||
+      a.metaData.order - b.metaData.order ||
+      creationIndex.get(a.id)! - creationIndex.get(b.id)!,
+  )
+  const indexById = new Map(layoutOrder.map((node, index) => [node.id, index]))
   const nodeIds = new Set(indexById.keys())
   const parentByPerson = new Map(
     tree.nodes.map((node) => [node.id, [] as string[]]),
@@ -124,6 +158,12 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
   }
   const unite = (first: string, second: string) => {
     if (!nodeIds.has(first) || !nodeIds.has(second)) return
+    if (
+      tree.nodes.find(({ id }) => id === first)!.metaData.layer !==
+      tree.nodes.find(({ id }) => id === second)!.metaData.layer
+    ) {
+      return
+    }
     const left = find(first)
     const right = find(second)
     if (left === right) return
@@ -157,7 +197,8 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
       id,
       members: members.sort((a, b) => indexById.get(a)! - indexById.get(b)!),
       order: Math.min(...members.map((member) => indexById.get(member)!)),
-      generation: 0,
+      generation: tree.nodes.find(({ id }) => id === members[0])!.metaData
+        .layer,
     }))
     .sort((a, b) => a.order - b.order)
   const groupByPerson = new Map<string, SiblingGroup>()
@@ -165,47 +206,20 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     group.members.forEach((personId) => groupByPerson.set(personId, group)),
   )
 
-  const childRelationships = tree.edges.filter(
-    (edge) =>
-      edge.type === 'child' && nodeIds.has(edge.from) && nodeIds.has(edge.to),
-  )
-  const generationConstraints = childRelationships.flatMap((edge) => {
-    const parentGroup = groupByPerson.get(edge.from)
-    const childGroup = groupByPerson.get(edge.to)
-    return parentGroup && childGroup && parentGroup !== childGroup
-      ? [{ parent: parentGroup, child: childGroup }]
-      : []
-  })
   const marriages = tree.edges.filter(
     (edge) =>
       edge.type === 'marriage' &&
       nodeIds.has(edge.from) &&
       nodeIds.has(edge.to),
   )
-
-  for (let pass = 0; pass < groups.length; pass += 1) {
-    let updated = false
-    for (const { parent, child } of generationConstraints) {
-      if (child.generation <= parent.generation) {
-        child.generation = parent.generation + 1
-        updated = true
-      }
-    }
-    for (const edge of marriages) {
-      const firstGroup = groupByPerson.get(edge.from)
-      const secondGroup = groupByPerson.get(edge.to)
-      if (!firstGroup || !secondGroup) continue
-      const generation = Math.max(firstGroup.generation, secondGroup.generation)
-      if (
-        firstGroup.generation !== generation ||
-        secondGroup.generation !== generation
-      ) {
-        firstGroup.generation = generation
-        secondGroup.generation = generation
-        updated = true
-      }
-    }
-    if (!updated) break
+  const explicitSiblings = tree.edges.filter((edge) => edge.type === 'sibling')
+  const areSiblingNeighbors = (first: string, second: string): boolean => {
+    const firstParents = [...(parentByPerson.get(first) ?? [])].sort()
+    const secondParents = [...(parentByPerson.get(second) ?? [])].sort()
+    return (
+      JSON.stringify(firstParents) === JSON.stringify(secondParents) ||
+      getConnectedSiblingMembers(first, explicitSiblings).includes(second)
+    )
   }
 
   const rowGroups = new Map<number, SiblingGroup[]>()
@@ -247,24 +261,14 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
                 ? centers.reduce((sum, center) => sum + center, 0) /
                   centers.length
                 : undefined,
-              order:
-                row.indexOf(group) * 1000 +
-                Math.min(...members.map((id) => indexById.get(id)!)),
+              order: Math.min(...members.map((id) => indexById.get(id)!)),
             }
           },
         ),
       )
       .sort((a, b) => {
-        if (a.parentAnchor !== undefined && b.parentAnchor !== undefined) {
-          return a.parentAnchor - b.parentAnchor || a.order - b.order
-        }
         return a.order - b.order
       })
-    orderMarriageBlocks(memberBlocks, marriages, groupByPerson, indexById)
-    const blockIndexByPerson = new Map<string, number>()
-    memberBlocks.forEach((block, blockIndex) =>
-      block.members.forEach((id) => blockIndexByPerson.set(id, blockIndex)),
-    )
     const plans = memberBlocks.map(({ members }, blockIndex) => {
       const parentIds = [
         ...new Set(members.flatMap((id) => parentByPerson.get(id) ?? [])),
@@ -273,11 +277,8 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
         .map((id) => positions[id])
         .filter((point): point is Point => Boolean(point))
         .map((point) => point.x + cardWidth / 2)
-      const orderedMembers = orderMembersForPartners(
-        members,
-        marriages,
-        indexById,
-        blockIndexByPerson,
+      const orderedMembers = [...members].sort(
+        (a, b) => indexById.get(a)! - indexById.get(b)!,
       )
       let width = cardWidth * orderedMembers.length
       for (let index = 0; index < orderedMembers.length - 1; index += 1) {
@@ -296,14 +297,16 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
       const firstMember = orderedMembers[orderedMembers.length - 1]
       const nextMember = nextMembers?.[0]
       const gap =
-        firstMember &&
-        nextMember &&
-        marriages.some(
-          (edge) =>
-            (edge.from === firstMember && edge.to === nextMember) ||
-            (edge.to === firstMember && edge.from === nextMember),
-        )
-          ? LAYOUT_SPACING.partnerGap
+        firstMember && nextMember
+          ? marriages.some(
+              (edge) =>
+                (edge.from === firstMember && edge.to === nextMember) ||
+                (edge.to === firstMember && edge.from === nextMember),
+            )
+            ? LAYOUT_SPACING.partnerGap
+            : areSiblingNeighbors(firstMember, nextMember)
+              ? LAYOUT_SPACING.siblingGap
+              : LAYOUT_SPACING.blockGap
           : LAYOUT_SPACING.blockGap
       preferredX = desiredX + width + gap
       return { members: orderedMembers, width, desiredX }
@@ -319,7 +322,9 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
           (edge.to === previousId && edge.from === nextId),
       )
         ? LAYOUT_SPACING.partnerGap
-        : LAYOUT_SPACING.blockGap
+        : previousId && nextId && areSiblingNeighbors(previousId, nextId)
+          ? LAYOUT_SPACING.siblingGap
+          : LAYOUT_SPACING.blockGap
     })
     const starts = placeOrderedBlocks(
       plans.map((plan) => plan.desiredX),
@@ -440,7 +445,19 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     if (consumed.has(edge)) continue
     const from = positions[edge.from]
     const to = positions[edge.to]
-    if (!from || !to || from.y !== to.y) continue
+    if (!from || !to) continue
+    if (from.y !== to.y) {
+      const upperId = from.y < to.y ? edge.from : edge.to
+      const lowerId = upperId === edge.from ? edge.to : edge.from
+      edgePaths.push({
+        edge,
+        path: getCrossLayerPath(upperId, lowerId, positions, cardWidth),
+        people: [edge.from, edge.to],
+        dots: [],
+      })
+      consumed.add(edge)
+      continue
+    }
     const leftId = from.x <= to.x ? edge.from : edge.to
     const rightId = leftId === edge.from ? edge.to : edge.from
     const left = positions[leftId]!
@@ -489,6 +506,21 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     cardWidth,
   )
   for (const edge of tree.edges) {
+    if (edge.type !== 'sibling' || consumed.has(edge)) continue
+    const from = positions[edge.from]
+    const to = positions[edge.to]
+    if (!from || !to || from.y === to.y) continue
+    const upperId = from.y < to.y ? edge.from : edge.to
+    const lowerId = upperId === edge.from ? edge.to : edge.from
+    edgePaths.push({
+      edge,
+      path: getCrossLayerPath(upperId, lowerId, positions, cardWidth),
+      people: [edge.from, edge.to],
+      dots: [],
+    })
+    consumed.add(edge)
+  }
+  for (const edge of tree.edges) {
     if (
       edge.type === 'child' ||
       edge.type === 'sibling' ||
@@ -510,8 +542,30 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
   }
 
   const maxGeneration = Math.max(0, ...groups.map((group) => group.generation))
+  const cardCenters = Object.fromEntries(
+    Object.entries(positions).map(([id, point]) => [
+      id,
+      { x: point.x + cardWidth / 2, y: point.y + CARD_HEIGHT / 2 },
+    ]),
+  )
+  const rowBands = [...rowGroups.entries()].map(([layer, row]) => {
+    const personIds = row.flatMap(({ members }) => members)
+    const rowPoints = personIds
+      .map((id) => positions[id])
+      .filter((point): point is Point => Boolean(point))
+    return {
+      layer,
+      left: LAYOUT_SPACING.margin,
+      top: Math.min(...rowPoints.map(({ y }) => y)) - 20,
+      width: maxWidth - LAYOUT_SPACING.margin * 2,
+      height: CARD_HEIGHT + 40,
+      personIds,
+    }
+  })
   return {
     positions,
+    cardCenters,
+    rowBands,
     edgePaths,
     width: maxWidth,
     height:
@@ -539,24 +593,6 @@ function shiftPathHorizontally(path: string, offset: number): string {
     }
   }
   return shifted.join(' ')
-}
-
-function splitSiblingGroup(
-  members: string[],
-  parentByPerson: Map<string, string[]>,
-  indexById: Map<string, number>,
-): string[][] {
-  const blocks = new Map<string, string[]>()
-  for (const personId of members) {
-    const parents = [...(parentByPerson.get(personId) ?? [])].sort()
-    const key = JSON.stringify(parents)
-    const block = blocks.get(key) ?? []
-    block.push(personId)
-    blocks.set(key, block)
-  }
-  return [...blocks.values()]
-    .map((block) => block.sort((a, b) => indexById.get(a)! - indexById.get(b)!))
-    .sort((a, b) => indexById.get(a[0]!)! - indexById.get(b[0]!)!)
 }
 
 function findClearDropColumn(
@@ -600,6 +636,39 @@ function findClearDropColumn(
     if (!verticalBlocked && !horizontalBlocked) return channelX
   }
   return sourceX
+}
+
+function splitSiblingGroup(
+  members: string[],
+  parentByPerson: Map<string, string[]>,
+  indexById: Map<string, number>,
+): string[][] {
+  const orderedMembers = [...members].sort(
+    (a, b) => indexById.get(a)! - indexById.get(b)!,
+  )
+  const blocks: string[][] = []
+  let currentKey: string | null = null
+  let previousOrder: number | null = null
+  for (const personId of orderedMembers) {
+    const parents = [...(parentByPerson.get(personId) ?? [])].sort()
+    const key = JSON.stringify(parents)
+    const order = indexById.get(personId)!
+    if (
+      key !== currentKey ||
+      previousOrder === null ||
+      order !== previousOrder + 1
+    ) {
+      blocks.push([])
+    }
+    blocks[blocks.length - 1]!.push(personId)
+    currentKey = key
+    previousOrder = order
+  }
+  return blocks
+    .map((block) => block.sort((a, b) => indexById.get(a)! - indexById.get(b)!))
+    .sort(
+      (a, b) => orderedMembers.indexOf(a[0]!) - orderedMembers.indexOf(b[0]!),
+    )
 }
 
 function placeOrderedBlocks(
@@ -666,199 +735,15 @@ function orderRowGroups(
   positions: Record<string, Point>,
   cardWidth: number,
 ) {
-  const parentAnchor = (group: SiblingGroup): number | undefined => {
-    const parents = [
-      ...new Set(group.members.flatMap((id) => parentByPerson.get(id) ?? [])),
-    ]
-    const centers = parents
-      .map((id) => positions[id])
-      .filter((point): point is Point => Boolean(point))
-      .map((point) => point.x + cardWidth / 2)
-    return centers.length
-      ? centers.reduce((sum, center) => sum + center, 0) / centers.length
-      : undefined
-  }
-  row.sort((a, b) => {
-    const leftAnchor = parentAnchor(a)
-    const rightAnchor = parentAnchor(b)
-    if (leftAnchor !== undefined && rightAnchor !== undefined) {
-      return leftAnchor - rightAnchor || a.order - b.order
-    }
-    if (leftAnchor !== undefined) return -1
-    if (rightAnchor !== undefined) return 1
-    return a.order - b.order
-  })
-  for (const group of [...row]) {
-    if (group.members.length !== 1) continue
-    const personId = group.members[0]!
-    const partnerGroups = [
-      ...new Set(
-        marriages
-          .flatMap((edge) => {
-            if (edge.from === personId) return [groupByPerson.get(edge.to)]
-            if (edge.to === personId) return [groupByPerson.get(edge.from)]
-            return []
-          })
-          .filter(
-            (partnerGroup): partnerGroup is SiblingGroup =>
-              partnerGroup !== undefined &&
-              partnerGroup !== group &&
-              row.includes(partnerGroup) &&
-              partnerGroup.members.length === 1,
-          ),
-      ),
-    ].sort(
-      (a, b) => indexById.get(a.members[0]!)! - indexById.get(b.members[0]!)!,
-    )
-    if (partnerGroups.length < 2) continue
-    const participants = [group, ...partnerGroups]
-    const insertionIndex = Math.min(
-      ...participants.map((item) => row.indexOf(item)),
-    )
-    participants
-      .map((item) => row.indexOf(item))
-      .sort((a, b) => b - a)
-      .forEach((index) => row.splice(index, 1))
-    row.splice(
-      insertionIndex,
-      0,
-      partnerGroups[0]!,
-      group,
-      ...partnerGroups.slice(1),
-    )
-  }
-  for (const marriage of marriages) {
-    const fromGroup = groupByPerson.get(marriage.from)
-    const toGroup = groupByPerson.get(marriage.to)
-    if (!fromGroup || !toGroup || fromGroup === toGroup) continue
-    const fromHasMultiplePartners =
-      marriages.filter(
-        (edge) => edge.from === marriage.from || edge.to === marriage.from,
-      ).length > 1
-    const toHasMultiplePartners =
-      marriages.filter(
-        (edge) => edge.from === marriage.to || edge.to === marriage.to,
-      ).length > 1
-    if (
-      fromGroup.members.length === 1 &&
-      toGroup.members.length === 1 &&
-      (fromHasMultiplePartners || toHasMultiplePartners)
-    ) {
-      continue
-    }
-    let left = row.indexOf(fromGroup)
-    let right = row.indexOf(toGroup)
-    if (left < 0 || right < 0 || Math.abs(left - right) <= 1) continue
-    if (left > right) {
-      ;[left, right] = [right, left]
-    }
-    const [linkedGroup] = row.splice(right, 1)
-    row.splice(left + 1, 0, linkedGroup!)
-  }
+  void marriages
+  void groupByPerson
+  void parentByPerson
+  void positions
+  void cardWidth
+  row.sort((a, b) => a.order - b.order)
   for (const group of row) {
     group.members.sort((a, b) => indexById.get(a)! - indexById.get(b)!)
   }
-}
-
-function orderMarriageBlocks(
-  blocks: Array<{ members: string[]; parentAnchor?: number; order: number }>,
-  marriages: TreeEdge[],
-  groupByPerson: Map<string, SiblingGroup>,
-  indexById: Map<string, number>,
-) {
-  const orderedEdges = [...marriages].sort(
-    (a, b) =>
-      Math.min(indexById.get(a.from)!, indexById.get(a.to)!) -
-      Math.min(indexById.get(b.from)!, indexById.get(b.to)!),
-  )
-  const partnerCount = new Map<string, number>()
-  for (const edge of marriages) {
-    partnerCount.set(edge.from, (partnerCount.get(edge.from) ?? 0) + 1)
-    partnerCount.set(edge.to, (partnerCount.get(edge.to) ?? 0) + 1)
-  }
-  for (const edge of orderedEdges) {
-    if (
-      (partnerCount.get(edge.from) ?? 0) > 1 ||
-      (partnerCount.get(edge.to) ?? 0) > 1
-    ) {
-      continue
-    }
-    const fromIndex = blocks.findIndex((block) =>
-      block.members.includes(edge.from),
-    )
-    const toIndex = blocks.findIndex((block) => block.members.includes(edge.to))
-    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) continue
-    if (Math.abs(fromIndex - toIndex) === 1) continue
-
-    const fromGroup = groupByPerson.get(edge.from)
-    const toGroup = groupByPerson.get(edge.to)
-    const fromIsSiblingGroup = (fromGroup?.members.length ?? 0) > 1
-    const toIsSiblingGroup = (toGroup?.members.length ?? 0) > 1
-    let movingIndex = toIndex
-    let anchorIndex = fromIndex
-    if (toIsSiblingGroup && !fromIsSiblingGroup) {
-      movingIndex = fromIndex
-      anchorIndex = toIndex
-    }
-
-    const [movingBlock] = blocks.splice(movingIndex, 1)
-    if (!movingBlock) continue
-    if (movingIndex < anchorIndex) anchorIndex -= 1
-    const movedEndpoint = movingBlock.members.includes(edge.from)
-      ? edge.from
-      : edge.to
-    const anchorBlock = blocks[anchorIndex]
-    const anchorEndpoint = anchorBlock?.members.includes(edge.from)
-      ? edge.from
-      : anchorBlock?.members.includes(edge.to)
-        ? edge.to
-        : null
-    const insertBefore =
-      anchorEndpoint !== null &&
-      indexById.get(movedEndpoint)! < indexById.get(anchorEndpoint)!
-    blocks.splice(anchorIndex + (insertBefore ? 0 : 1), 0, movingBlock)
-  }
-}
-
-function orderMembersForPartners(
-  members: string[],
-  marriages: TreeEdge[],
-  indexById: Map<string, number>,
-  blockIndexByPerson: Map<string, number>,
-): string[] {
-  const ordered = [...members].sort(
-    (a, b) => indexById.get(a)! - indexById.get(b)!,
-  )
-  if (ordered.length < 2) return ordered
-  const partnerSides = new Map<string, { left: boolean; right: boolean }>()
-  for (const edge of marriages) {
-    const personId = members.includes(edge.from)
-      ? edge.from
-      : members.includes(edge.to)
-        ? edge.to
-        : null
-    if (!personId) continue
-    const partnerId = edge.from === personId ? edge.to : edge.from
-    const personBlock = blockIndexByPerson.get(personId)
-    const partnerBlock = blockIndexByPerson.get(partnerId)
-    if (personBlock === undefined || partnerBlock === undefined) continue
-    const side = partnerBlock < personBlock ? 'left' : 'right'
-    const current = partnerSides.get(personId) ?? { left: false, right: false }
-    current[side] = true
-    partnerSides.set(personId, current)
-  }
-  const leftPartner = ordered.find((id) => partnerSides.get(id)?.left)
-  const rightPartner = [...ordered]
-    .reverse()
-    .find((id) => partnerSides.get(id)?.right)
-  const remainder = ordered.filter(
-    (id) => id !== leftPartner && id !== rightPartner,
-  )
-  return [
-    ...(leftPartner ? [leftPartner] : []),
-    ...remainder,
-    ...(rightPartner && rightPartner !== leftPartner ? [rightPartner] : []),
-  ]
 }
 
 function collectFamilies(
@@ -870,7 +755,7 @@ function collectFamilies(
   for (const child of tree.nodes) {
     const parents = (parentByPerson.get(child.id) ?? []).sort()
     if (!parents.length) continue
-    const key = JSON.stringify(parents)
+    const key = JSON.stringify({ parents, layer: child.metaData.layer })
     const family = familyMap.get(key) ?? {
       parents,
       children: [],
@@ -888,7 +773,10 @@ function collectFamilies(
   for (const edge of tree.edges) {
     if (edge.type !== 'child') continue
     const parents = [...(parentByPerson.get(edge.to) ?? [])].sort()
-    const family = familyMap.get(JSON.stringify(parents))
+    const child = tree.nodes.find(({ id }) => id === edge.to)
+    const family = child
+      ? familyMap.get(JSON.stringify({ parents, layer: child.metaData.layer }))
+      : undefined
     if (family) family.edges.push(edge)
   }
   return [...familyMap.values()].sort((a, b) => {
@@ -1048,10 +936,13 @@ function getFamilyPath(
   const parentBottom = Math.max(
     ...parentPoints.map((point) => point.y + CARD_HEIGHT),
   )
-  const busY =
-    parentBottom +
-    LAYOUT_SPACING.lineInset +
-    family.lane * LAYOUT_SPACING.laneSpacing
+  const childTop = Math.min(...childPoints.map((point) => point.y))
+  const busY = Math.max(
+    parentBottom + LAYOUT_SPACING.lineInset,
+    childTop -
+      LAYOUT_SPACING.lineInset -
+      family.lane * LAYOUT_SPACING.laneSpacing,
+  )
   const childCenters = childPoints.map((point) => point.x + cardWidth / 2)
   const commands: string[] = []
   const dots: Point[] = []
@@ -1068,23 +959,33 @@ function getFamilyPath(
     const centerX = (left!.x + cardWidth + right!.x) / 2
     sourceCenters.push(centerX)
     const centerY = left!.y + CARD_HEIGHT / 2
+    const routeY =
+      parentBottom +
+      LAYOUT_SPACING.lineInset +
+      (marriageLane ?? family.lane) * LAYOUT_SPACING.laneSpacing
+    const channelX = findClearDropColumn(
+      centerX,
+      routeY,
+      busY,
+      family,
+      positions,
+      cardWidth,
+    )
     const adjacent =
       right!.x - (left!.x + cardWidth) <= LAYOUT_SPACING.partnerGap
+    commands.push(
+      adjacent
+        ? `M ${left!.x + cardWidth} ${centerY} H ${right!.x}`
+        : `M ${left!.x + cardWidth / 2} ${left!.y + CARD_HEIGHT} V ${routeY} H ${right!.x + cardWidth / 2} V ${right!.y + CARD_HEIGHT}`,
+      adjacent
+        ? `M ${centerX} ${centerY} V ${routeY}`
+        : `M ${centerX} ${routeY}`,
+      ...(channelX === centerX ? [] : [`H ${channelX}`]),
+      `V ${busY}`,
+    )
     if (adjacent) {
-      commands.push(
-        `M ${left!.x + cardWidth} ${centerY} H ${right!.x}`,
-        `M ${centerX} ${centerY} V ${busY}`,
-      )
       dots.push({ x: centerX, y: centerY })
     } else {
-      const routeY =
-        parentBottom +
-        LAYOUT_SPACING.lineInset +
-        (marriageLane ?? family.lane + 1) * LAYOUT_SPACING.laneSpacing
-      commands.push(
-        `M ${left!.x + cardWidth / 2} ${left!.y + CARD_HEIGHT} V ${routeY} H ${right!.x + cardWidth / 2} V ${right!.y + CARD_HEIGHT}`,
-        `M ${centerX} ${routeY} V ${busY}`,
-      )
       dots.push({ x: centerX, y: routeY })
     }
   } else {
@@ -1236,6 +1137,36 @@ function getUnusualEdgePath(from: Point, to: Point, cardWidth: number): string {
   }
   const routeY = Math.max(from.y, to.y) + CARD_HEIGHT + LAYOUT_SPACING.lineInset
   return `M ${from.x + cardWidth / 2} ${from.y + CARD_HEIGHT} V ${routeY} H ${to.x + cardWidth / 2} V ${to.y + CARD_HEIGHT}`
+}
+
+function getCrossLayerPath(
+  upperId: string,
+  lowerId: string,
+  positions: Record<string, Point>,
+  cardWidth: number,
+): string {
+  const upper = positions[upperId]!
+  const lower = positions[lowerId]!
+  const sourceX = upper.x + cardWidth / 2
+  const targetX = lower.x + cardWidth / 2
+  const routeY = upper.y + CARD_HEIGHT + LAYOUT_SPACING.lineInset
+  const lowerRouteY = lower.y - LAYOUT_SPACING.lineInset
+  const family: Family = {
+    parents: [upperId],
+    children: [lowerId],
+    edges: [],
+    generation: 0,
+    lane: 0,
+  }
+  const channelX = findClearDropColumn(
+    sourceX,
+    routeY,
+    lowerRouteY,
+    family,
+    positions,
+    cardWidth,
+  )
+  return `M ${sourceX} ${upper.y + CARD_HEIGHT} V ${routeY} H ${channelX} V ${lowerRouteY} H ${targetX} V ${lower.y}`
 }
 
 function samePair(

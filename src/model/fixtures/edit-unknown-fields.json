@@ -9,6 +9,10 @@
         "lastName": "Testowa",
         "customNote": "Fictional field to verify forward compatibility"
       },
+      "metaData": {
+        "layer": 0,
+        "order": 0
+      },
       "customNodeField": "preserved"
     }
   ],

@@ -21,7 +21,11 @@ function makeTree(
 ): FamilyTree {
   return {
     version: 1,
-    nodes: people.map((id) => ({ id, data: { firstName: id } })),
+    nodes: people.map((id, order) => ({
+      id,
+      data: { firstName: id },
+      metaData: { layer: 0, order },
+    })),
     edges,
   }
 }
@@ -182,11 +186,7 @@ describe('smart connection questions and operations', () => {
   it('adds only selected explicit sibling links after other-parent edges when adding a child', () => {
     const tree = makeTree(
       ['anna', 'piotr', 'mia', 'olek'],
-      [
-        marriage('anna', 'piotr'),
-        child('anna', 'mia'),
-        child('anna', 'olek'),
-      ],
+      [marriage('anna', 'piotr'), child('anna', 'mia'), child('anna', 'olek')],
     )
     const questions = getConnectionQuestions(tree, 'anna', 'child')
     expect(questions).toMatchObject([
@@ -389,15 +389,17 @@ describe('smart connection questions and operations', () => {
         child('parent-c', 'target'),
       ],
     )
-    expect(getConnectionQuestions(tree, 'target', 'sibling')[0]?.items).toEqual([
-      { personId: 'parent-a', defaultChecked: true },
-      { personId: 'parent-b', defaultChecked: true },
-      {
-        personId: 'parent-c',
-        defaultChecked: false,
-        disabledReason: 'twoParents',
-      },
-    ])
+    expect(getConnectionQuestions(tree, 'target', 'sibling')[0]?.items).toEqual(
+      [
+        { personId: 'parent-a', defaultChecked: true },
+        { personId: 'parent-b', defaultChecked: true },
+        {
+          personId: 'parent-c',
+          defaultChecked: false,
+          disabledReason: 'twoParents',
+        },
+      ],
+    )
   })
 
   it('rejects connections for unknown targets and does not mutate trees on failure', () => {

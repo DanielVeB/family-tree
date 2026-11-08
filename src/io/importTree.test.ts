@@ -26,6 +26,76 @@ describe('parseTreeFile', () => {
     expect(JSON.parse(serializeTree(parsed.tree))).toEqual(
       JSON.parse(unknownFieldsFile),
     )
+    expect(parsed.tree.nodes[0]!.metaData.futurePosition).toBe('preserved')
+  })
+
+  it('repairs gaps and duplicate positions per part while preserving metadata', () => {
+    const parsed = parseTreeFile(
+      JSON.stringify({
+        version: 1,
+        nodes: [
+          {
+            id: 'first',
+            data: { firstName: 'Anna' },
+            metaData: { layer: 4, order: 8, note: 'preserved' },
+          },
+          {
+            id: 'second',
+            data: { firstName: 'Jan' },
+            metaData: { layer: 4, order: 8 },
+          },
+          {
+            id: 'child',
+            data: { firstName: 'Mia' },
+            metaData: { layer: 9, order: 5 },
+          },
+        ],
+        edges: [
+          { from: 'first', to: 'child', type: 'child' },
+          { from: 'first', to: 'second', type: 'sibling' },
+        ],
+      }),
+    )
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(
+      parsed.tree.nodes.map(({ id, metaData }) => [
+        id,
+        metaData.layer,
+        metaData.order,
+      ]),
+    ).toEqual([
+      ['first', 0, 0],
+      ['second', 0, 1],
+      ['child', 1, 0],
+    ])
+    expect(parsed.tree.nodes[0]!.metaData.note).toBe('preserved')
+  })
+
+  it('does not reject or repair child level relationships on import', () => {
+    const parsed = parseTreeFile(
+      JSON.stringify({
+        version: 1,
+        nodes: [
+          {
+            id: 'parent',
+            data: { firstName: 'Anna' },
+            metaData: { layer: 1, order: 0 },
+          },
+          {
+            id: 'child',
+            data: { firstName: 'Mia' },
+            metaData: { layer: 0, order: 0 },
+          },
+        ],
+        edges: [{ from: 'parent', to: 'child', type: 'child' }],
+      }),
+    )
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.tree.nodes.map(({ metaData }) => metaData.layer)).toEqual([
+      1, 0,
+    ])
   })
 
   it.each([

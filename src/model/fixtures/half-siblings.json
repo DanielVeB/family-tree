@@ -2,11 +2,31 @@
   "_note": "Fictional test fixture",
   "version": 1,
   "nodes": [
-    { "id": "person-anna", "data": { "firstName": "Anna" } },
-    { "id": "person-piotr", "data": { "firstName": "Piotr" } },
-    { "id": "person-marek", "data": { "firstName": "Marek" } },
-    { "id": "person-mia", "data": { "firstName": "Mia" } },
-    { "id": "person-olek", "data": { "firstName": "Olek" } }
+    {
+      "id": "person-anna",
+      "data": { "firstName": "Anna" },
+      "metaData": { "layer": 0, "order": 0 }
+    },
+    {
+      "id": "person-piotr",
+      "data": { "firstName": "Piotr" },
+      "metaData": { "layer": 0, "order": 1 }
+    },
+    {
+      "id": "person-marek",
+      "data": { "firstName": "Marek" },
+      "metaData": { "layer": 0, "order": 2 }
+    },
+    {
+      "id": "person-mia",
+      "data": { "firstName": "Mia" },
+      "metaData": { "layer": 1, "order": 0 }
+    },
+    {
+      "id": "person-olek",
+      "data": { "firstName": "Olek" },
+      "metaData": { "layer": 1, "order": 1 }
+    }
   ],
   "edges": [
     { "from": "person-anna", "to": "person-piotr", "type": "marriage" },

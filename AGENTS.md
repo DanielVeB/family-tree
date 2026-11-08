@@ -59,6 +59,7 @@ The in-memory tree already has the JSON shape expected by future import/export:
 interface PersonNode {
   id: string;
   data: { firstName: string; lastName?: string; [key: string]: unknown };
+  metaData: { layer: number; order: number; [key: string]: unknown };
 }
 
 interface TreeEdge {
@@ -87,6 +88,9 @@ Rules:
 - Edge endpoints must exist, self-edges and duplicate edges are invalid, and child edges must not form ancestry cycles.
 - Relation types are declared in one place with the schema in `src/model/`; extend this definition alongside its UI label.
 - Zod schemas preserve unknown node, `data`, edge, and top-level fields for forward compatibility.
+- `metaData.layer` and `metaData.order` are required nonnegative integers. Levels start at 0, and order starts at 0 from left to right within each part's level. Import repairs level gaps and duplicate/gapped orders; files without either field are rejected.
+- Child edges always point from a lower layer to a higher layer. Marriage and explicit sibling edges normally stay on the same layer. Each connected part starts at layer 0, with consecutive levels and orders.
+- Layout reads stored layer/order and must not rewrite them. Movement operations are pure model functions and preserve unrelated parts.
 - `getDisplayName(person)` is the single helper for building a person's displayed name.
 - Always include `version`. When the schema changes, add a migration function from the previous version.
 
@@ -198,11 +202,12 @@ Out of scope for v1 (do not build unless asked): accounts, cloud sync, collabora
 
 - The pure layout implementation lives in `src/layout/`; keep layout decisions out of React components. `computeLayout` is memoized by the tree and card width; selection changes only line styling.
 - Build sibling groups from explicit sibling relationships and shared parents. Marriage does not make two people siblings or merge their sibling groups.
-- Keep each sibling group contiguous. Place outside partners beside their partner when possible, and keep each partner's sibling group distinct. Order parented groups by their parents' left-to-right position, then creation order for ties; order top-level groups by creation order.
-- Keep partner cards adjacent where possible. If two sibling groups are joined by a marriage, keep the couple at their shared edge and show the couple line in the space between them.
-- Keep children of each exact parent set in their own block, centered under their couple point or single parent when space allows. Half-sibling groups from different couples remain separate.
+- Rows and left-to-right order come from each person's stored `metaData.layer` and `metaData.order`; layout never reorders or rewrites those values. Keep sibling and partner groups adjacent, and center children under their parents, only where that stored order allows.
+- Keep each partner's sibling group distinct. If two sibling groups are joined by a marriage, show the couple line in the space between them when their stored order allows.
+- Keep children of each exact parent set in their own block where stored order allows. Half-sibling groups from different couples remain separate.
 - Use grouped child buses and one bracket per explicit sibling group without a shared-parent bus. Do not draw pairwise sibling lines for children already grouped by a parent bus.
 - Draw orthogonal relationship lines that never pass through an unrelated card. Use separate horizontal lanes for overlapping routes; selected people's relationship lines use `--oak` and a thicker stroke, without moving the layout.
+- Child buses sit in the gap directly above their row even when parent and child layers are not adjacent. Cross-layer marriage and sibling edges use orthogonal elbows.
 - Keep spacing in `src/layout/config.ts`: partner gap 32px, sibling gap 24px, block gap at least 64px, row gap at least 96px, and lane spacing 8px. Increase row gaps when routes need more lanes.
 - Geometric invariants: cards do not overlap; lines attach only at their related card edges; unrelated routes do not overlap or run parallel closer than 8px; every relationship is represented once; the same tree produces the same layout.
 

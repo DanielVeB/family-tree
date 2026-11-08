@@ -2,11 +2,31 @@
   "_note": "Fictional test fixture",
   "version": 1,
   "nodes": [
-    { "id": "person-anna", "data": { "firstName": "Anna", "lastName": "Testowa" } },
-    { "id": "person-piotr", "data": { "firstName": "Piotr", "lastName": "Przykładowy" } },
-    { "id": "person-mia", "data": { "firstName": "Mia" } },
-    { "id": "person-olek", "data": { "firstName": "Olek" } },
-    { "id": "person-zosia", "data": { "firstName": "Zosia" } }
+    {
+      "id": "person-anna",
+      "data": { "firstName": "Anna", "lastName": "Testowa" },
+      "metaData": { "layer": 0, "order": 0 }
+    },
+    {
+      "id": "person-piotr",
+      "data": { "firstName": "Piotr", "lastName": "Przykładowy" },
+      "metaData": { "layer": 0, "order": 1 }
+    },
+    {
+      "id": "person-mia",
+      "data": { "firstName": "Mia" },
+      "metaData": { "layer": 1, "order": 0 }
+    },
+    {
+      "id": "person-olek",
+      "data": { "firstName": "Olek" },
+      "metaData": { "layer": 1, "order": 1 }
+    },
+    {
+      "id": "person-zosia",
+      "data": { "firstName": "Zosia" },
+      "metaData": { "layer": 1, "order": 2 }
+    }
   ],
   "edges": [
     { "from": "person-anna", "to": "person-piotr", "type": "marriage" },

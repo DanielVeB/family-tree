@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import DeletePersonDialog from './DeletePersonDialog'
+import MoveDialog from './MoveDialog'
 import {
   computeLayout,
   LAYOUT_SPACING,
@@ -17,6 +18,9 @@ import {
 } from '../layout/computeLayout'
 import {
   getDeletePreview,
+  getConnectedPeople,
+  getConnectedParts,
+  getMoveLevelAvailability,
   getChildrenOf,
   getConnectionQuestions,
   getDefaultConnectionAnswers,
@@ -25,6 +29,7 @@ import {
   getParentsOf,
   getPartnersOf,
   getSiblingsOf,
+  moveSelection,
   TreeOperationError,
   type FamilyTree,
   type ConnectionAnswers,
@@ -33,6 +38,7 @@ import {
   type PersonName,
   type PersonNode,
   type RelativeKind,
+  type MoveRequest,
 } from '../model/tree'
 
 interface TreeViewProps {
@@ -44,9 +50,28 @@ interface TreeViewProps {
     relation: RelativeKind,
     name: PersonName,
     answers: ConnectionAnswers,
+    centers: Record<string, number>,
   ) => void
   onUpdatePerson: (personId: string, name: PersonName) => boolean
   onDeletePerson: (personId: string) => void
+  onMovePerson: (
+    tree: FamilyTree,
+    personId: string,
+    connectedCount: number,
+  ) => void
+}
+
+interface DragPreview {
+  personId: string
+  pointerId: number
+  startWorld: Point
+  pointer: Point
+  targetLayer: number
+  dx: number
+  dy: number
+  availability: ReturnType<typeof getMoveLevelAvailability>
+  partIds: string[]
+  connectedIds: string[]
 }
 
 const relationButtons: Array<{ kind: RelativeKind; label: string }> = [
@@ -71,6 +96,7 @@ export default function TreeView({
   onAddRelative,
   onUpdatePerson,
   onDeletePerson,
+  onMovePerson,
 }: TreeViewProps) {
   const { t } = useTranslation()
   const [cardWidth, setCardWidth] = useState(
@@ -94,6 +120,17 @@ export default function TreeView({
     midpoint: Point
     viewport: typeof viewport
   } | null>(null)
+  const dragCandidate = useRef<{
+    personId: string
+    pointerId: number
+    start: Point
+    pointerType: string
+  } | null>(null)
+  const dragTimer = useRef<number | null>(null)
+  const dragRef = useRef<DragPreview | null>(null)
+  const suppressCardClick = useRef(false)
+  const [drag, setDrag] = useState<DragPreview | null>(null)
+  const [heldPersonId, setHeldPersonId] = useState<string | null>(null)
   const [relativeForm, setRelativeForm] = useState<RelativeKind | null>(null)
   const [editing, setEditing] = useState(false)
   const [deletePreview, setDeletePreview] = useState<DeletePreview | null>(null)
@@ -108,6 +145,13 @@ export default function TreeView({
     { checked: {}, choice: null },
   )
   const [connectionError, setConnectionError] = useState(false)
+  const [pendingMove, setPendingMove] = useState<{
+    request: MoveRequest
+    connectedCount: number
+    checked: boolean
+    disabled?: 'needed' | 'blocked'
+  } | null>(null)
+  const [moveAnnouncement, setMoveAnnouncement] = useState('')
   const connectionChoiceRef = useRef<HTMLInputElement>(null)
   const relativeFirstNameRef = useRef<HTMLInputElement>(null)
   const editButtonRef = useRef<HTMLButtonElement>(null)
@@ -125,6 +169,212 @@ export default function TreeView({
   )
   const selectedHasTwoParents =
     selectedId !== null && getParentCount(tree, selectedId) >= 2
+  const selectedLevels = selectedId
+    ? getMoveLevelAvailability(tree, selectedId)
+    : []
+  const applyMove = useCallback(
+    (request: MoveRequest, connectedCount: number) => {
+      const result = moveSelection(tree, request)
+      if (result === tree) return
+      const movedPerson = tree.nodes.find(({ id }) => id === request.personId)
+      if (!movedPerson) return
+      onMovePerson(result, request.personId, connectedCount)
+      const moved = result.nodes.find(({ id }) => id === request.personId)
+      setMoveAnnouncement(
+        moved && moved.metaData.layer !== movedPerson.metaData.layer
+          ? t('layers.announceLevel', {
+              name: getDisplayName(movedPerson),
+              level: moved.metaData.layer + 1,
+            })
+          : t('layers.announce', { name: getDisplayName(movedPerson) }),
+      )
+    },
+    [onMovePerson, t, tree],
+  )
+
+  const requestMove = useCallback(
+    (request: MoveRequest) => {
+      const person = tree.nodes.find(({ id }) => id === request.personId)
+      if (!person) return
+      const connectedIds = getConnectedPeople(tree, request.personId)
+      const connectedCount = connectedIds.length - 1
+      const availability = getMoveLevelAvailability(
+        tree,
+        request.personId,
+      ).find(({ layer }) => layer === request.targetLayer)
+      if (!availability) return
+      const onlyValid = availability.onlyThisPersonValid
+      const withValid = availability.withConnectedPeopleValid
+      if (!onlyValid && !withValid) return
+      if (connectedCount === 0) {
+        applyMove({ ...request, moveConnected: false }, 0)
+        return
+      }
+      setPendingMove({
+        request,
+        connectedCount,
+        checked: withValid,
+        ...(!onlyValid && withValid ? { disabled: 'needed' as const } : {}),
+        ...(onlyValid && !withValid ? { disabled: 'blocked' as const } : {}),
+      })
+    },
+    [applyMove, tree],
+  )
+
+  const moveDirection = useCallback(
+    (
+      direction: 'up' | 'down' | 'left' | 'right',
+      personId = selectedId ?? undefined,
+    ) => {
+      const person = tree.nodes.find(({ id }) => id === personId)
+      if (!person || relativeForm || editing) return
+      const currentLayer = person.metaData.layer
+      if (direction === 'up' || direction === 'down') {
+        const targetLayer = currentLayer + (direction === 'up' ? -1 : 1)
+        requestMove({
+          personId: person.id,
+          targetLayer,
+          dx: 0,
+          moveConnected: false,
+          centers: Object.fromEntries(
+            tree.nodes.map((person) => [
+              person.id,
+              layout.cardCenters[person.id]
+                ? layout.cardCenters[person.id]!.x
+                : person.metaData.order,
+            ]),
+          ),
+        })
+        return
+      }
+      const ordered = tree.nodes
+        .filter((person) => person.metaData.layer === currentLayer)
+        .sort((a, b) => a.metaData.order - b.metaData.order)
+      const index = ordered.findIndex(({ id }) => id === person.id)
+      const neighbor = ordered[index + (direction === 'left' ? -1 : 1)]
+      const point = layout.positions[person.id]
+      const neighborPoint = neighbor ? layout.positions[neighbor.id] : undefined
+      if (!point || !neighborPoint) return
+      const selectedCenter = point.x + cardWidth / 2
+      const neighborCenter = neighborPoint.x + cardWidth / 2
+      const dx =
+        neighborCenter -
+        selectedCenter +
+        (direction === 'right' ? cardWidth / 2 : -cardWidth / 2)
+      requestMove({
+        personId: person.id,
+        targetLayer: currentLayer,
+        dx,
+        moveConnected: false,
+        centers: Object.fromEntries(
+          tree.nodes.map((person) => [
+            person.id,
+            layout.cardCenters[person.id]
+              ? layout.cardCenters[person.id]!.x
+              : person.metaData.order,
+          ]),
+        ),
+      })
+    },
+    [
+      cardWidth,
+      editing,
+      layout.cardCenters,
+      layout.positions,
+      relativeForm,
+      requestMove,
+      selectedId,
+      tree.nodes,
+    ],
+  )
+
+  const setDragPreview = useCallback((preview: DragPreview | null) => {
+    dragRef.current = preview
+    setDrag(preview)
+  }, [])
+
+  const startCardDrag = useCallback(
+    (personId: string, pointerId: number, start: Point) => {
+      const person = tree.nodes.find(({ id }) => id === personId)
+      if (!person) return
+      const partIds =
+        getConnectedParts(tree).find((ids) => ids.includes(personId)) ?? []
+      const startWorld = {
+        x: (start.x - viewport.x) / viewport.scale,
+        y: (start.y - viewport.y) / viewport.scale,
+      }
+      const preview: DragPreview = {
+        personId,
+        pointerId,
+        startWorld,
+        pointer: start,
+        targetLayer: person.metaData.layer,
+        dx: 0,
+        dy: 0,
+        availability: getMoveLevelAvailability(tree, personId),
+        partIds,
+        connectedIds: getConnectedPeople(tree, personId),
+      }
+      setDragPreview(preview)
+      panStart.current = null
+      setHeldPersonId(null)
+    },
+    [setDragPreview, tree, viewport.scale, viewport.x, viewport.y],
+  )
+
+  const updateCardDrag = useCallback(
+    (pointer: Point) => {
+      const current = dragRef.current
+      if (!current) return
+      const world = {
+        x: (pointer.x - viewport.x) / viewport.scale,
+        y: (pointer.y - viewport.y) / viewport.scale,
+      }
+      const rowCenters = [
+        ...new Set(
+          tree.nodes
+            .filter(({ id }) => current.partIds.includes(id))
+            .map(({ metaData }) => metaData.layer),
+        ),
+      ].map((layer) => {
+        const row = tree.nodes.filter(
+          (person) =>
+            current.partIds.includes(person.id) &&
+            person.metaData.layer === layer,
+        )
+        return {
+          layer,
+          y:
+            row.reduce(
+              (sum, person) =>
+                sum +
+                (layout.positions[person.id]?.y ?? 0) +
+                LAYOUT_SPACING.cardHeight / 2,
+              0,
+            ) / Math.max(1, row.length),
+        }
+      })
+      const targetLayer =
+        rowCenters.sort(
+          (a, b) => Math.abs(a.y - world.y) - Math.abs(b.y - world.y),
+        )[0]?.layer ?? current.targetLayer
+      setDragPreview({
+        ...current,
+        pointer,
+        targetLayer,
+        dx: world.x - current.startWorld.x,
+        dy: world.y - current.startWorld.y,
+      })
+    },
+    [
+      layout.positions,
+      setDragPreview,
+      tree.nodes,
+      viewport.scale,
+      viewport.x,
+      viewport.y,
+    ],
+  )
 
   const fitToScreen = useCallback(() => {
     const canvas = canvasRef.current
@@ -228,6 +478,15 @@ export default function TreeView({
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== 'Escape') return
+      if (dragRef.current) {
+        setDragPreview(null)
+        dragCandidate.current = null
+        if (dragTimer.current !== null) {
+          window.clearTimeout(dragTimer.current)
+          dragTimer.current = null
+        }
+        return
+      }
       if (deletePreview) return
       if (relativeForm) {
         setRelativeForm(null)
@@ -254,6 +513,7 @@ export default function TreeView({
     selectedId,
     closeDetail,
     cancelEdit,
+    setDragPreview,
   ])
 
   function submitEdit(event: FormEvent<HTMLFormElement>) {
@@ -332,6 +592,12 @@ export default function TreeView({
           lastName: lastName.trim(),
         },
         connectionAnswers,
+        Object.fromEntries(
+          Object.entries(layout.cardCenters).map(([id, point]) => [
+            id,
+            point.x,
+          ]),
+        ),
       )
     } catch (error) {
       if (!(error instanceof TreeOperationError)) throw error
@@ -374,14 +640,44 @@ export default function TreeView({
   })
 
   function pointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    const personCard =
+      event.target instanceof Element
+        ? event.target.closest<HTMLElement>('.person-card')
+        : null
     if (
       event.target instanceof Element &&
-      event.target.closest('.person-card, .canvas-controls')
+      event.target.closest('.canvas-controls')
     )
       return
-    event.currentTarget.setPointerCapture(event.pointerId)
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }
     if (pointers.current.size === 0) pointerMovedRef.current = false
     pointers.current.set(event.pointerId, pointerPosition(event))
+    if (personCard) {
+      const personId = personCard.id.replace(/^person-/, '')
+      const start = pointerPosition(event)
+      dragCandidate.current = {
+        personId,
+        pointerId: event.pointerId,
+        start,
+        pointerType: event.pointerType,
+      }
+      if (event.pointerType === 'touch') {
+        panStart.current = { pointer: start, viewport }
+        setHeldPersonId(personId)
+        dragTimer.current = window.setTimeout(() => {
+          const candidate = dragCandidate.current
+          if (!candidate || candidate.pointerId !== event.pointerId) return
+          startCardDrag(
+            candidate.personId,
+            candidate.pointerId,
+            candidate.start,
+          )
+        }, 400)
+      }
+      return
+    }
     if (pointers.current.size === 1) {
       panStart.current = { pointer: pointerPosition(event), viewport }
     } else if (pointers.current.size === 2) {
@@ -398,6 +694,28 @@ export default function TreeView({
     if (!pointers.current.has(event.pointerId)) return
     const point = pointerPosition(event)
     const previousPoint = pointers.current.get(event.pointerId)!
+    const candidate = dragCandidate.current
+    if (candidate?.pointerId === event.pointerId && !dragRef.current) {
+      const moved =
+        Math.hypot(point.x - candidate.start.x, point.y - candidate.start.y) > 6
+      if (candidate.pointerType === 'touch' && moved) {
+        if (dragTimer.current !== null) {
+          window.clearTimeout(dragTimer.current)
+          dragTimer.current = null
+        }
+        dragCandidate.current = null
+        setHeldPersonId(null)
+      } else if (candidate.pointerType !== 'touch' && moved) {
+        startCardDrag(candidate.personId, candidate.pointerId, candidate.start)
+      }
+    }
+    if (dragRef.current?.pointerId === event.pointerId) {
+      updateCardDrag(point)
+      pointerMovedRef.current = true
+      event.preventDefault()
+      pointers.current.set(event.pointerId, point)
+      return
+    }
     if (
       Math.abs(point.x - previousPoint.x) > 4 ||
       Math.abs(point.y - previousPoint.y) > 4
@@ -434,6 +752,72 @@ export default function TreeView({
   }
 
   function pointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.type === 'pointercancel') {
+      setDragPreview(null)
+      dragCandidate.current = null
+      setHeldPersonId(null)
+      if (dragTimer.current !== null) {
+        window.clearTimeout(dragTimer.current)
+        dragTimer.current = null
+      }
+      pointers.current.delete(event.pointerId)
+      panStart.current = null
+      return
+    }
+    if (dragRef.current?.pointerId === event.pointerId) {
+      updateCardDrag(pointerPosition(event))
+    }
+    const activeDrag = dragRef.current
+    if (activeDrag?.pointerId === event.pointerId) {
+      const canvas = canvasRef.current
+      const bounds = canvas?.getBoundingClientRect()
+      const outside =
+        !bounds ||
+        event.clientX < bounds.left ||
+        event.clientX > bounds.right ||
+        event.clientY < bounds.top ||
+        event.clientY > bounds.bottom
+      if (!outside) {
+        const pointer = pointerPosition(event)
+        const worldX = (pointer.x - viewport.x) / viewport.scale
+        const selected = tree.nodes.find(({ id }) => id === activeDrag.personId)
+        const availability = activeDrag.availability.find(
+          ({ layer }) => layer === activeDrag.targetLayer,
+        )
+        if (
+          selected &&
+          availability &&
+          (availability.onlyThisPersonValid ||
+            availability.withConnectedPeopleValid)
+        ) {
+          requestMove({
+            personId: activeDrag.personId,
+            targetLayer: activeDrag.targetLayer,
+            dx: worldX - activeDrag.startWorld.x,
+            moveConnected: false,
+            centers: Object.fromEntries(
+              tree.nodes.map((person) => [
+                person.id,
+                layout.cardCenters[person.id]
+                  ? layout.cardCenters[person.id]!.x
+                  : person.metaData.order,
+              ]),
+            ),
+          })
+        }
+      }
+      suppressCardClick.current = true
+      window.setTimeout(() => {
+        suppressCardClick.current = false
+      }, 0)
+      setDragPreview(null)
+    }
+    dragCandidate.current = null
+    setHeldPersonId(null)
+    if (dragTimer.current !== null) {
+      window.clearTimeout(dragTimer.current)
+      dragTimer.current = null
+    }
     pointers.current.delete(event.pointerId)
     if (pointers.current.size < 2) pinchStart.current = null
     if (pointers.current.size === 0) panStart.current = null
@@ -513,6 +897,32 @@ export default function TreeView({
             transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`,
           }}
         >
+          {drag &&
+            drag.availability.map((level) => {
+              const band = layout.rowBands.find(
+                (item) =>
+                  item.layer === level.layer &&
+                  item.personIds.some((id) => drag.partIds.includes(id)),
+              )
+              if (!band) return null
+              const available =
+                level.onlyThisPersonValid || level.withConnectedPeopleValid
+              return (
+                <div
+                  key={level.layer}
+                  className={`drag-level-band${available ? '' : ' drag-level-band--unavailable'}${drag.targetLayer === level.layer && available ? ' drag-level-band--target' : ''}`}
+                  style={{
+                    left: band.left,
+                    top: band.top,
+                    width: band.width,
+                    height: band.height,
+                  }}
+                  aria-hidden="true"
+                >
+                  <span>{t('layers.level', { level: level.layer + 1 })}</span>
+                </div>
+              )
+            })}
           <svg
             className="tree-lines"
             width={layout.width}
@@ -544,7 +954,23 @@ export default function TreeView({
             })}
           </svg>
           {tree.nodes.map((person) => {
-            const point = layout.positions[person.id]
+            const originalPoint = layout.positions[person.id]
+            const showConnectedPreview = drag
+              ? (drag.availability.find(
+                  ({ layer }) => layer === drag.targetLayer,
+                )?.withConnectedPeopleValid ?? false)
+              : false
+            const followsDrag = Boolean(
+              drag?.connectedIds.includes(person.id) &&
+              (person.id === drag.personId || showConnectedPreview),
+            )
+            const point =
+              drag && originalPoint && followsDrag
+                ? {
+                    x: originalPoint.x + drag.dx,
+                    y: originalPoint.y + drag.dy,
+                  }
+                : originalPoint
             return (
               <PersonCard
                 key={person.id}
@@ -552,7 +978,16 @@ export default function TreeView({
                 point={point}
                 selected={selectedId === person.id}
                 width={cardWidth}
+                held={heldPersonId === person.id}
+                dragging={drag?.personId === person.id}
+                dragConnected={
+                  drag?.personId !== person.id && Boolean(followsDrag)
+                }
                 onSelect={() => {
+                  if (suppressCardClick.current) {
+                    suppressCardClick.current = false
+                    return
+                  }
                   setRelativeForm(null)
                   setEditing(false)
                   setDeletePreview(null)
@@ -562,9 +997,38 @@ export default function TreeView({
                   setFormErrorField(null)
                   onSelect(person.id)
                 }}
+                onMoveDirection={(direction) =>
+                  moveDirection(direction, person.id)
+                }
               />
             )
           })}
+          {drag && (
+            <div
+              className="drag-insertion-line"
+              style={{
+                left:
+                  (drag.pointer.x - viewport.x) / viewport.scale -
+                  LAYOUT_SPACING.lineInset,
+                top:
+                  (tree.nodes.find(
+                    (person) =>
+                      drag.partIds.includes(person.id) &&
+                      person.metaData.layer === drag.targetLayer,
+                  )
+                    ? layout.positions[
+                        tree.nodes.find(
+                          (person) =>
+                            drag.partIds.includes(person.id) &&
+                            person.metaData.layer === drag.targetLayer,
+                        )!.id
+                      ]!.y
+                    : 0) - 12,
+                height: LAYOUT_SPACING.cardHeight + 24,
+              }}
+              aria-hidden="true"
+            />
+          )}
         </div>
         <div
           className="canvas-controls"
@@ -676,6 +1140,96 @@ export default function TreeView({
           ) : (
             <>
               <h2 className="detail-panel__name">{selectedName}</h2>
+              {!relativeForm && !editing && (
+                <section
+                  className="position-controls"
+                  aria-label={t('layers.controls')}
+                >
+                  <p>
+                    {t('layers.level', {
+                      level: selectedPerson.metaData.layer + 1,
+                    })}
+                  </p>
+                  <div className="position-controls__buttons">
+                    {(
+                      [
+                        ['up', '↑', 'layers.up'],
+                        ['down', '↓', 'layers.down'],
+                        ['left', '←', 'layers.left'],
+                        ['right', '→', 'layers.right'],
+                      ] as const
+                    ).map(([direction, icon, key]) => {
+                      const enabled =
+                        direction === 'up' || direction === 'down'
+                          ? selectedLevels.some(
+                              ({
+                                layer,
+                                onlyThisPersonValid,
+                                withConnectedPeopleValid,
+                              }) =>
+                                layer ===
+                                  selectedPerson.metaData.layer +
+                                    (direction === 'up' ? -1 : 1) &&
+                                (onlyThisPersonValid ||
+                                  withConnectedPeopleValid),
+                            )
+                          : (() => {
+                              const row = tree.nodes
+                                .filter(
+                                  (person) =>
+                                    person.metaData.layer ===
+                                    selectedPerson.metaData.layer,
+                                )
+                                .sort(
+                                  (a, b) => a.metaData.order - b.metaData.order,
+                                )
+                              const index = row.findIndex(
+                                ({ id }) => id === selectedPerson.id,
+                              )
+                              return direction === 'left'
+                                ? index > 0
+                                : index >= 0 && index < row.length - 1
+                            })()
+                      return (
+                        <button
+                          key={direction}
+                          className="icon-pill"
+                          type="button"
+                          aria-label={t(key)}
+                          title={t(key)}
+                          disabled={!enabled}
+                          aria-describedby={
+                            enabled
+                              ? undefined
+                              : direction === 'up' || direction === 'down'
+                                ? selectedLevels.some(
+                                    ({ layer }) =>
+                                      layer ===
+                                      selectedPerson.metaData.layer +
+                                        (direction === 'up' ? -1 : 1),
+                                  )
+                                  ? 'position-unavailable'
+                                  : 'position-no-neighbor'
+                                : 'position-no-neighbor'
+                          }
+                          onClick={() => moveDirection(direction)}
+                        >
+                          <span aria-hidden="true">{icon}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <span className="visually-hidden" id="position-unavailable">
+                    {t('layers.unavailable')}
+                  </span>
+                  <span className="visually-hidden" id="position-no-neighbor">
+                    {t('layers.noNeighbor')}
+                  </span>
+                </section>
+              )}
+              <span className="visually-hidden" aria-live="polite">
+                {moveAnnouncement}
+              </span>
               <span className="visually-hidden" aria-live="polite">
                 {editAnnounced ? t('editNameAnnounce') : ''}
               </span>
@@ -772,6 +1326,38 @@ export default function TreeView({
           }}
         />
       )}
+      {pendingMove && (
+        <MoveDialog
+          name={selectedName}
+          connectedCount={pendingMove.connectedCount}
+          moveConnected={pendingMove.checked}
+          connectedDisabled={pendingMove.disabled}
+          onMoveConnected={(checked) =>
+            setPendingMove((current) =>
+              current ? { ...current, checked } : current,
+            )
+          }
+          onConfirm={() => {
+            const moveConnected = pendingMove.checked
+            const movedPersonId = pendingMove.request.personId
+            applyMove(
+              { ...pendingMove.request, moveConnected },
+              moveConnected ? pendingMove.connectedCount : 0,
+            )
+            setPendingMove(null)
+            window.requestAnimationFrame(() =>
+              document.getElementById(`person-${movedPersonId}`)?.focus(),
+            )
+          }}
+          onCancel={() => {
+            const movedPersonId = pendingMove.request.personId
+            setPendingMove(null)
+            window.requestAnimationFrame(() =>
+              document.getElementById(`person-${movedPersonId}`)?.focus(),
+            )
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -781,13 +1367,24 @@ function PersonCard({
   point,
   selected,
   width,
+  held,
+  dragging,
+  dragConnected,
   onSelect,
+  onMoveDirection,
 }: {
   person: PersonNode
   point: Point | undefined
   selected: boolean
   width: number
+  held: boolean
+  dragging: boolean
+  dragConnected: boolean
   onSelect: () => void
+  onMoveDirection: (
+    direction: 'up' | 'down' | 'left' | 'right',
+    personId?: string,
+  ) => void
 }) {
   const name = getDisplayName(person)
   const initials =
@@ -797,11 +1394,26 @@ function PersonCard({
     <button
       id={`person-${person.id}`}
       type="button"
-      className={`person-card${selected ? ' person-card--selected' : ''}`}
+      className={`person-card${selected ? ' person-card--selected' : ''}${held ? ' person-card--held' : ''}${dragging ? ' person-card--dragging' : ''}${dragConnected ? ' person-card--drag-connected' : ''}`}
       style={{ left: point.x, top: point.y, width }}
       aria-label={name}
       aria-pressed={selected}
       onClick={onSelect}
+      onKeyDown={(event) => {
+        if (!event.altKey) return
+        const direction = {
+          ArrowUp: 'up',
+          ArrowDown: 'down',
+          ArrowLeft: 'left',
+          ArrowRight: 'right',
+        }[event.key]
+        if (!direction) return
+        event.preventDefault()
+        onMoveDirection(
+          direction as 'up' | 'down' | 'left' | 'right',
+          person.id,
+        )
+      }}
     >
       <span className="person-card__avatar" aria-hidden="true">
         {initials}

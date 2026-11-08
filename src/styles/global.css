@@ -364,6 +364,7 @@ h1 {
 
 .tree-lines {
   position: absolute;
+  z-index: 1;
   inset: 0;
   overflow: visible;
   pointer-events: none;
@@ -411,6 +412,64 @@ h1 {
 .person-card[aria-pressed='true'] {
   outline: 2px solid var(--ring);
   outline-offset: 0;
+}
+
+.person-card--held {
+  border-color: var(--border-strong);
+}
+
+.person-card--dragging {
+  z-index: 4;
+  opacity: 0.85;
+}
+
+.person-card--drag-connected {
+  z-index: 3;
+  border: 2px solid var(--border-strong);
+  background: transparent;
+  opacity: 0.5;
+  color: transparent;
+}
+
+.person-card--drag-connected > * {
+  visibility: hidden;
+}
+
+.drag-level-band {
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  border-radius: var(--radius-card);
+  background: var(--tint-faint);
+  pointer-events: none;
+  transition: background-color 150ms ease, outline-color 150ms ease;
+}
+
+.drag-level-band > span {
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.drag-level-band--unavailable {
+  opacity: 0.4;
+}
+
+.drag-level-band--target {
+  outline: 2px solid var(--ring);
+  background: var(--tint-hover);
+}
+
+.drag-insertion-line {
+  position: absolute;
+  z-index: 5;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--ring);
+  pointer-events: none;
+  transition: left 150ms ease, top 150ms ease;
 }
 
 .person-card__avatar {
@@ -498,6 +557,25 @@ h1 {
   line-height: 1.1;
   letter-spacing: -0.9px;
   overflow-wrap: anywhere;
+}
+
+.position-controls {
+  margin: -12px 0 24px;
+}
+
+.position-controls p {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.position-controls__buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.position-controls .icon-pill:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .detail-danger-zone {
@@ -783,6 +861,32 @@ h1 {
   margin-top: 24px;
 }
 
+.move-dialog {
+  width: min(100%, 480px);
+  padding: 24px;
+}
+
+.move-dialog h2 {
+  margin: 0 0 20px;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.9px;
+  overflow-wrap: anywhere;
+}
+
+.move-dialog .form-actions {
+  margin-top: 24px;
+}
+
+.connection-option__hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
 .replace-tree-dialog h2 {
   margin: 0;
   font-size: 28px;
@@ -940,6 +1044,11 @@ h1 {
   }
 
   .delete-person-dialog {
+    align-self: end;
+    padding: 24px 16px max(24px, env(safe-area-inset-bottom));
+  }
+
+  .move-dialog {
     align-self: end;
     padding: 24px 16px max(24px, env(safe-area-inset-bottom));
     border-radius: 16px 16px 0 0;

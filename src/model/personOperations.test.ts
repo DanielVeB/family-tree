@@ -22,9 +22,10 @@ function makeTree(
   return {
     version: 1,
     title: 'preserved',
-    nodes: people.map((id) => ({
+    nodes: people.map((id, order) => ({
       id,
       data: { firstName: id, note: `note-${id}` },
+      metaData: { layer: 0, order },
       extra: `extra-${id}`,
     })),
     edges,
@@ -47,6 +48,7 @@ describe('person editing', () => {
     expect(updated.nodes[0]).toEqual({
       id: 'anna',
       data: { firstName: 'Łucja', lastName: 'Żółć', note: 'note-anna' },
+      metaData: { layer: 0, order: 0 },
       extra: 'extra-anna',
     })
     expect(updated.nodes.slice(1)).toEqual(tree.nodes.slice(1))

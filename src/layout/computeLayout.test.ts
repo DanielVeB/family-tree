@@ -1,16 +1,60 @@
 import { describe, expect, it } from 'vitest'
 import { computeLayout, LAYOUT_SPACING } from './computeLayout'
-import type { FamilyTree } from '../model/tree'
+import { assignLayers, type FamilyTree } from '../model/tree'
 
-const person = (id: string) => ({
-  id,
-  data: { firstName: id, lastName: '' },
-})
-const tree = (ids: string[], edges: FamilyTree['edges'] = []): FamilyTree => ({
-  version: 1,
-  nodes: ids.map(person),
-  edges,
-})
+const tree = (ids: string[], edges: FamilyTree['edges'] = []): FamilyTree => {
+  const assigned = assignLayers({
+    version: 1,
+    nodes: ids.map((id, order) => ({
+      id,
+      data: { firstName: id, lastName: '' },
+      metaData: { layer: 0, order },
+    })),
+    edges,
+  })
+  const rows = new Map<number, string[]>()
+  for (const person of assigned.nodes) {
+    const row = rows.get(person.metaData.layer) ?? []
+    row.push(person.id)
+    rows.set(person.metaData.layer, row)
+  }
+  const partnerCounts = new Map<string, number>()
+  for (const edge of edges) {
+    if (edge.type !== 'marriage') continue
+    partnerCounts.set(edge.from, (partnerCounts.get(edge.from) ?? 0) + 1)
+    partnerCounts.set(edge.to, (partnerCounts.get(edge.to) ?? 0) + 1)
+  }
+  for (const edge of edges) {
+    if (edge.type !== 'marriage') continue
+    const from = assigned.nodes.find(({ id }) => id === edge.from)!
+    const to = assigned.nodes.find(({ id }) => id === edge.to)!
+    if (from.metaData.layer !== to.metaData.layer) continue
+    const row = rows.get(from.metaData.layer)!
+    const partnerIndex = row.indexOf(edge.to)
+    row.splice(partnerIndex, 1)
+    const index = row.indexOf(edge.from)
+    const insertBefore =
+      (partnerCounts.get(edge.from) ?? 0) > 1 &&
+      edges
+        .filter((candidate) => candidate.type === 'marriage')
+        .findIndex(
+          (candidate) =>
+            candidate.from === edge.from || candidate.to === edge.from,
+        ) === edges.indexOf(edge)
+    row.splice(index + (insertBefore ? 0 : 1), 0, edge.to)
+  }
+  const orderById = new Map<string, number>()
+  for (const row of rows.values()) {
+    row.forEach((id, order) => orderById.set(id, order))
+  }
+  return {
+    ...assigned,
+    nodes: assigned.nodes.map((person) => ({
+      ...person,
+      metaData: { ...person.metaData, order: orderById.get(person.id) ?? 0 },
+    })),
+  }
+}
 
 describe('computeLayout', () => {
   it('places a single person and has no edge paths', () => {
@@ -273,7 +317,7 @@ describe('computeLayout', () => {
         200 +
         layout.positions['parent-b']!.x) /
       2
-    const busY = layout.positions['parent-a']!.y + 88 + LAYOUT_SPACING.lineInset
+    const busY = layout.positions['child-a']!.y - LAYOUT_SPACING.lineInset
     const childCenters = [
       layout.positions['child-a']!.x + 100,
       layout.positions['child-b']!.x + 100,
@@ -281,7 +325,7 @@ describe('computeLayout', () => {
     expect(familyPath!.path).toContain(
       `M ${Math.min(couplePointX, ...childCenters)} ${busY} H ${Math.max(couplePointX, ...childCenters)}`,
     )
-    expect(layout.positions['child-a']!.x + 100).toBeGreaterThan(couplePointX)
+    expect(familyPath!.path).toContain(`M ${couplePointX}`)
   })
 
   it('keeps a newly added partner beside the person in a sibling group', () => {
@@ -372,6 +416,86 @@ describe('computeLayout', () => {
     expectNoOverlaps(layout, ids)
   })
 
+  it('uses stored row order without rewriting it and returns drag geometry', () => {
+    const positionedTree: FamilyTree = {
+      version: 1,
+      nodes: [
+        {
+          id: 'first',
+          data: { firstName: 'First' },
+          metaData: { layer: 0, order: 0 },
+        },
+        {
+          id: 'middle',
+          data: { firstName: 'Middle' },
+          metaData: { layer: 0, order: 1 },
+        },
+        {
+          id: 'last',
+          data: { firstName: 'Last' },
+          metaData: { layer: 0, order: 2 },
+        },
+      ],
+      edges: [
+        { from: 'first', to: 'last', type: 'marriage' },
+        { from: 'first', to: 'middle', type: 'sibling' },
+      ],
+    }
+    const layout = computeLayout(positionedTree)
+    expect(
+      [...positionedTree.nodes]
+        .sort((a, b) => a.metaData.order - b.metaData.order)
+        .map(({ id }) => id)
+        .sort((a, b) => layout.positions[a]!.x - layout.positions[b]!.x),
+    ).toEqual(['first', 'middle', 'last'])
+    expect(layout.cardCenters.first).toEqual({
+      x: layout.positions.first!.x + 100,
+      y: layout.positions.first!.y + 44,
+    })
+
+    expect(layout.rowBands[0]).toMatchObject({
+      layer: 0,
+      personIds: ['first', 'middle', 'last'],
+    })
+  })
+
+  it('creates a separate child bus for each level below the same parents', () => {
+    const positionedTree: FamilyTree = {
+      version: 1,
+      nodes: [
+        {
+          id: 'parent',
+          data: { firstName: 'Parent' },
+          metaData: { layer: 0, order: 0 },
+        },
+        {
+          id: 'near-child',
+          data: { firstName: 'Near child' },
+          metaData: { layer: 1, order: 0 },
+        },
+        {
+          id: 'far-child',
+          data: { firstName: 'Far child' },
+          metaData: { layer: 2, order: 0 },
+        },
+      ],
+      edges: [
+        { from: 'parent', to: 'near-child', type: 'child' },
+        { from: 'parent', to: 'far-child', type: 'child' },
+      ],
+    }
+    const layout = computeLayout(positionedTree)
+    expect(
+      layout.edgePaths.filter(({ people }) => people.includes('parent')),
+    ).toHaveLength(2)
+    const farChildPath = layout.edgePaths.find(({ people }) =>
+      people.includes('far-child'),
+    )
+    expect(farChildPath?.path).toContain(
+      `V ${layout.positions['far-child']!.y}`,
+    )
+  })
+
   it('does not overlap cards and leaves node order stable when a person is added', () => {
     const initial = computeLayout(tree(['a', 'b', 'c']))
     const extended = computeLayout(tree(['a', 'b', 'c', 'd']))
@@ -449,10 +573,14 @@ describe('computeLayout', () => {
       { from: 'parent-b', to: 'child-b', type: 'child' },
       { from: 'child-b', to: 'partner', type: 'marriage' },
     ]
-    const forward = computeLayout(tree(ids, edges))
-    const reversed = computeLayout(
-      tree([...ids].reverse(), [...edges].reverse()),
-    )
+    const forwardTree = tree(ids, edges)
+    const reversedTree = {
+      ...forwardTree,
+      nodes: [...forwardTree.nodes].reverse(),
+      edges: [...forwardTree.edges].reverse(),
+    }
+    const forward = computeLayout(forwardTree)
+    const reversed = computeLayout(reversedTree)
     for (const layout of [forward, reversed]) {
       expect(
         layout.positions['parent-a']!.x + layout.positions['parent-b']!.x + 200,

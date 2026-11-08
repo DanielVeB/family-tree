@@ -89,7 +89,13 @@ describe('exportWithFileSystemAccess', () => {
 
   const tree = {
     version: 1 as const,
-    nodes: [{ id: 'person-1', data: { firstName: 'Łucja Żółć' } }],
+    nodes: [
+      {
+        id: 'person-1',
+        data: { firstName: 'Łucja Żółć' },
+        metaData: { layer: 0, order: 0 },
+      },
+    ],
     edges: [],
   }
 
@@ -246,6 +252,7 @@ describe('serializeTree', () => {
           lastName: 'Żółtowski',
           futureField: { note: 'Zażółć gęślą jaźń 🧡' },
         },
+        metaData: { layer: 0, order: 0 },
       },
     ],
     edges: [],
@@ -263,14 +270,31 @@ describe('serializeTree', () => {
     expect(serialized).not.toContain('\\u0141')
     expect(JSON.parse(serialized)).toEqual(tree)
     expect(TreeSchema.parse(JSON.parse(serialized))).toEqual(tree)
+    expect(Object.keys(JSON.parse(serialized).nodes[0]!)).toEqual([
+      'id',
+      'data',
+      'metaData',
+    ])
+    expect(Object.keys(JSON.parse(serialized).nodes[0]!.metaData)).toEqual([
+      'layer',
+      'order',
+    ])
   })
 
   it('preserves insertion order and includes no additional UI data', () => {
     const serialized = serializeTree({
       version: 1,
       nodes: [
-        { id: 'second', data: { firstName: 'Jan' } },
-        { id: 'first', data: { firstName: 'Anna' } },
+        {
+          id: 'second',
+          data: { firstName: 'Jan' },
+          metaData: { layer: 0, order: 0 },
+        },
+        {
+          id: 'first',
+          data: { firstName: 'Anna' },
+          metaData: { layer: 0, order: 1 },
+        },
       ],
       edges: [{ from: 'second', to: 'first', type: 'child' }],
     })

@@ -8,6 +8,14 @@ A private, client-side family tree app. Family data stays in your browser and is
 
 Exported files contain personal data. Store them securely and share them only with people you trust. See the [JSON file format guide](docs/file-format.md) for the file structure and relationship rules.
 
+Each person stores a `metaData` object with their `layer` and `order`. Layers
+start at 0 for the top row; order starts at 0 from the left within each row.
+Both values are nonnegative integers. Parents are always above children;
+partners and explicit siblings normally share a layer. Each connected part
+starts at layer 0 with consecutive levels, and every row has consecutive
+orders. Files without these values are not accepted. The app repairs gaps and
+duplicate positions when loading a valid file.
+
 Use **Import a file** to load a previously exported family tree. On desktop
 Chrome, Edge, and Opera, **Export** opens a native save dialog the first time
 and later exports overwrite that selected file. Firefox, Safari (including

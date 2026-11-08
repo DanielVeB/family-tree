@@ -6,6 +6,10 @@
       "data": {
         "firstName": "Łucja",
         "lastName": "Żółć"
+      },
+      "metaData": {
+        "layer": 0,
+        "order": 0
       }
     },
     {
@@ -13,6 +17,10 @@
       "data": {
         "firstName": "Jan",
         "lastName": "Przykładowy"
+      },
+      "metaData": {
+        "layer": 1,
+        "order": 0
       }
     }
   ],

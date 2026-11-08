@@ -22,6 +22,7 @@ describe('family tree operations', () => {
         {
           id: expect.any(String),
           data: { firstName: 'Anna', lastName: 'Testowa' },
+          metaData: { layer: 0, order: 0 },
         },
       ],
       edges: [],
@@ -43,6 +44,7 @@ describe('family tree operations', () => {
       getDisplayName({
         id: 'unknown-surname',
         data: { firstName: 'Jan', lastName: '' },
+        metaData: { layer: 0, order: 0 },
       }),
     ).toBe('Jan')
   })
@@ -91,6 +93,40 @@ describe('family tree operations', () => {
       addRelative(tree, 'missing', 'child', { firstName: 'Child' }),
     ).toThrowError(new TreeOperationError('unknownPerson'))
   })
+
+  it('keeps new relatives at stored levels and shifts the part when adding a top parent', () => {
+    let tree = addFirstPerson(createEmptyTree(), { firstName: 'Jan' })
+    const janId = tree.nodes[0]!.id
+    tree = addRelative(tree, janId, 'child', { firstName: 'Celina' })
+    const celinaId = tree.nodes[tree.nodes.length - 1]!.id
+    tree = addRelative(tree, celinaId, 'partner', { firstName: 'Dariusz' })
+    const dariuszId = tree.nodes[tree.nodes.length - 1]!.id
+    tree = addRelative(tree, dariuszId, 'parent', { firstName: 'Marek' })
+    const marekId = tree.nodes[tree.nodes.length - 1]!.id
+    tree = addRelative(tree, dariuszId, 'parent', { firstName: 'Ewa' })
+    tree = addRelative(tree, marekId, 'parent', { firstName: 'Stefan' })
+
+    const layerByName = Object.fromEntries(
+      tree.nodes.map((person) => [
+        person.data.firstName,
+        person.metaData.layer,
+      ]),
+    )
+    expect(layerByName).toEqual({
+      Jan: 1,
+      Celina: 2,
+      Dariusz: 2,
+      Marek: 1,
+      Ewa: 1,
+      Stefan: 0,
+    })
+    expect(
+      tree.nodes
+        .filter((person) => person.metaData.layer === 1)
+        .map((person) => person.metaData.order)
+        .sort((a, b) => a - b),
+    ).toEqual([0, 1, 2])
+  })
 })
 
 describe('tree schema', () => {
@@ -98,8 +134,16 @@ describe('tree schema', () => {
     version: 1,
     title: 'preserved',
     nodes: [
-      { id: 'a', data: { firstName: 'Anna', extra: 'preserved' } },
-      { id: 'b', data: { firstName: 'Jan' } },
+      {
+        id: 'a',
+        data: { firstName: 'Anna', extra: 'preserved' },
+        metaData: { layer: 0, order: 0 },
+      },
+      {
+        id: 'b',
+        data: { firstName: 'Jan' },
+        metaData: { layer: 0, order: 1 },
+      },
     ],
     edges: [],
   }
@@ -143,7 +187,43 @@ describe('tree schema', () => {
     },
     {
       ...validTree,
-      nodes: [{ id: 'a', data: { firstName: '  ' } }],
+      nodes: [
+        {
+          id: 'a',
+          data: { firstName: '  ' },
+          metaData: { layer: 0, order: 0 },
+        },
+      ],
+    },
+    {
+      ...validTree,
+      nodes: [
+        {
+          id: 'a',
+          data: { firstName: 'Anna' },
+          metaData: { order: 0 },
+        },
+      ],
+    },
+    {
+      ...validTree,
+      nodes: [
+        {
+          id: 'a',
+          data: { firstName: 'Anna' },
+          metaData: { layer: -1, order: 0 },
+        },
+      ],
+    },
+    {
+      ...validTree,
+      nodes: [
+        {
+          id: 'a',
+          data: { firstName: 'Anna' },
+          metaData: { layer: 0, order: 0.5 },
+        },
+      ],
     },
     {
       ...validTree,
@@ -151,7 +231,13 @@ describe('tree schema', () => {
     },
     {
       ...validTree,
-      nodes: [{ id: 'a', data: { firstName: 42 } }],
+      nodes: [
+        {
+          id: 'a',
+          data: { firstName: 42 },
+          metaData: { layer: 0, order: 0 },
+        },
+      ],
     },
   ])('rejects invalid graph data', (invalidTree) => {
     expect(TreeSchema.safeParse(invalidTree).success).toBe(false)

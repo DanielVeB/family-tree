@@ -26,7 +26,7 @@ import {
 import { parseTreeFile } from './io/importTree'
 import {
   addFirstPerson,
-  addRelative,
+  addRelativeWithResult,
   createEmptyTree,
   deletePerson,
   getDisplayName,
@@ -48,6 +48,7 @@ interface AppState {
   loadedFromFile: boolean
   viewKey: number
   undo: {
+    kind: 'delete' | 'move'
     tree: FamilyTree
     selectedId: string | null
     revision: number
@@ -65,7 +66,8 @@ type AppAction =
   | { type: 'add-relative'; tree: FamilyTree; selectedId: string }
   | { type: 'edit-person'; tree: FamilyTree }
   | { type: 'delete-person'; tree: FamilyTree }
-  | { type: 'undo-delete' }
+  | { type: 'move-person'; tree: FamilyTree }
+  | { type: 'undo-change' }
   | { type: 'clear-undo' }
   | {
       type: 'export-started'
@@ -123,6 +125,7 @@ function reducer(state: AppState, action: AppAction): AppState {
         revision: state.revision + 1,
         loadedFromFile: false,
         undo: {
+          kind: 'delete',
           tree: state.tree,
           selectedId: state.selectedId,
           revision: state.revision,
@@ -133,7 +136,25 @@ function reducer(state: AppState, action: AppAction): AppState {
         },
         hasUnexportedEditOrDelete: true,
       }
-    case 'undo-delete':
+    case 'move-person':
+      return {
+        ...state,
+        tree: action.tree,
+        revision: state.revision + 1,
+        loadedFromFile: false,
+        undo: {
+          kind: 'move',
+          tree: state.tree,
+          selectedId: state.selectedId,
+          revision: state.revision,
+          exportedRevision: state.exportedRevision,
+          exportedAt: state.exportedAt,
+          loadedFromFile: state.loadedFromFile,
+          hasUnexportedEditOrDelete: state.hasUnexportedEditOrDelete,
+        },
+        hasUnexportedEditOrDelete: true,
+      }
+    case 'undo-change':
       if (!state.undo) return state
       return {
         ...state,
@@ -317,14 +338,26 @@ function App() {
     relation: 'parent' | 'child' | 'sibling' | 'partner',
     name: PersonName,
     answers: ConnectionAnswers,
+    centers: Record<string, number>,
   ) {
-    const tree = addRelative(state.tree, selectedId, relation, name, answers)
+    const result = addRelativeWithResult(
+      state.tree,
+      selectedId,
+      relation,
+      name,
+      answers,
+      centers,
+    )
+    const tree = result.tree
     clearToast()
     dispatch({
       type: 'add-relative',
       tree,
       selectedId: tree.nodes[tree.nodes.length - 1]!.id,
     })
+    if (result.levelsRecalculated) {
+      showToast({ kind: 'layers-recalculated' })
+    }
   }
 
   function editPerson(personId: string, name: PersonName): boolean {
@@ -347,16 +380,33 @@ function App() {
   }
 
   function undoDelete() {
-    if (!state.undo || toast?.kind !== 'delete') return
-    const name = toast.name
+    if (!state.undo || (toast?.kind !== 'delete' && toast?.kind !== 'move'))
+      return
+    const name = toast.kind === 'delete' ? toast.name : undefined
     if (exportToastTimeoutRef.current !== null) {
       window.clearTimeout(exportToastTimeoutRef.current)
       exportToastTimeoutRef.current = null
     }
     setToast(null)
     focusAfterTreeActionRef.current = 'undo'
-    dispatch({ type: 'undo-delete' })
-    showToast({ kind: 'restored', name }, 5000)
+    dispatch({ type: 'undo-change' })
+    showToast(name ? { kind: 'restored', name } : { kind: 'move-undone' }, 5000)
+  }
+
+  function movePerson(
+    tree: FamilyTree,
+    personId: string,
+    connectedCount: number,
+  ) {
+    if (tree === state.tree) return
+    const person = state.tree.nodes.find(({ id }) => id === personId)
+    if (!person) throw new TreeOperationError('unknownPerson')
+    clearToast()
+    dispatch({ type: 'move-person', tree })
+    showToast(
+      { kind: 'move', name: getDisplayName(person), connectedCount },
+      10_000,
+    )
   }
 
   function clearToast() {
@@ -368,7 +418,11 @@ function App() {
   }
 
   function showToast(message: ToastMessage, duration = 8000) {
-    if (toast?.kind === 'delete' && message.kind !== 'delete') {
+    if (
+      (toast?.kind === 'delete' || toast?.kind === 'move') &&
+      message.kind !== 'delete' &&
+      message.kind !== 'move'
+    ) {
       dispatch({ type: 'clear-undo' })
     }
     if (exportToastTimeoutRef.current !== null) {
@@ -378,7 +432,9 @@ function App() {
     exportToastTimeoutRef.current = window.setTimeout(() => {
       exportToastTimeoutRef.current = null
       setToast(null)
-      if (message.kind === 'delete') dispatch({ type: 'clear-undo' })
+      if (message.kind === 'delete' || message.kind === 'move') {
+        dispatch({ type: 'clear-undo' })
+      }
     }, duration)
   }
 
@@ -691,6 +747,7 @@ function App() {
             onAddRelative={createRelative}
             onUpdatePerson={editPerson}
             onDeletePerson={removePerson}
+            onMovePerson={movePerson}
           />
         </main>
       )}
@@ -729,7 +786,8 @@ function App() {
             window.clearTimeout(exportToastTimeoutRef.current)
             exportToastTimeoutRef.current = null
           }
-          if (toast?.kind === 'delete') dispatch({ type: 'clear-undo' })
+          if (toast?.kind === 'delete' || toast?.kind === 'move')
+            dispatch({ type: 'clear-undo' })
           setToast(null)
         }}
       />

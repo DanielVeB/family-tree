@@ -22,7 +22,8 @@ or confirm the export target.
 - `version` is the format version. The current version is `1`.
 - `nodes` is an array of people in creation order. Each node has a unique `id`
   and a `data` object containing a required `firstName` and an optional
-  `lastName`. Unknown fields in `data` are retained.
+  `lastName`, plus required `metaData.layer` and `metaData.order` integers.
+  Unknown fields in `data` and `metaData` are retained.
 - `edges` is an array of relationships in creation order. `from` and `to`
   contain node IDs, and `type` is one of the relationship types below.
 - Unknown fields on the tree, nodes, data, and edges are retained where
@@ -30,6 +31,20 @@ or confirm the export target.
 
 When importing and exporting a file, the app preserves unknown fields so that
 data from a newer format can survive a round trip through this version.
+
+## Stored positions
+
+Every node must include `metaData` with nonnegative integer `layer` and `order`
+values. Files without either value are rejected; there is no migration from
+older files. The app repairs gaps and duplicate orders on import without
+changing the loaded/export status.
+
+- `layer` is the row, starting at `0` for the top row.
+- `order` is the left-to-right position, starting at `0` within a row.
+- Each connected part starts at layer `0`; its used layers and each row's
+  orders are consecutive.
+- For every `child` edge, the parent's layer is less than the child's layer.
+- Marriage and explicit sibling edges are normally on the same layer.
 
 ## Relationship types
 
@@ -61,6 +76,10 @@ a node to itself, and must not duplicate another edge of the same type.
       "data": {
         "firstName": "Anna",
         "lastName": "Testowa"
+      },
+      "metaData": {
+        "layer": 0,
+        "order": 0
       }
     },
     {
@@ -68,6 +87,10 @@ a node to itself, and must not duplicate another edge of the same type.
       "data": {
         "firstName": "Jan",
         "lastName": "Przykładowy"
+      },
+      "metaData": {
+        "layer": 1,
+        "order": 0
       }
     }
   ],

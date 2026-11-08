@@ -7,6 +7,11 @@
     {
       "id": "person-anna",
       "futureNodeField": true,
+      "metaData": {
+        "layer": 0,
+        "order": 0,
+        "futurePosition": "preserved"
+      },
       "data": {
         "firstName": "Anna",
         "futureDataField": ["kept"]
@@ -14,6 +19,10 @@
     },
     {
       "id": "person-jan",
+      "metaData": {
+        "layer": 1,
+        "order": 0
+      },
       "data": {
         "firstName": "Jan"
       }

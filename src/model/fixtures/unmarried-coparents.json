@@ -2,9 +2,21 @@
   "_note": "Fictional test fixture",
   "version": 1,
   "nodes": [
-    { "id": "person-anna", "data": { "firstName": "Anna" } },
-    { "id": "person-tomek", "data": { "firstName": "Tomek" } },
-    { "id": "person-mia", "data": { "firstName": "Mia" } }
+    {
+      "id": "person-anna",
+      "data": { "firstName": "Anna" },
+      "metaData": { "layer": 0, "order": 0 }
+    },
+    {
+      "id": "person-tomek",
+      "data": { "firstName": "Tomek" },
+      "metaData": { "layer": 0, "order": 1 }
+    },
+    {
+      "id": "person-mia",
+      "data": { "firstName": "Mia" },
+      "metaData": { "layer": 1, "order": 0 }
+    }
   ],
   "edges": [
     { "from": "person-anna", "to": "person-mia", "type": "child" },

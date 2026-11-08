@@ -4,14 +4,24 @@
   "nodes": [
     {
       "id": "person-anna",
-      "data": { "firstName": "Anna", "lastName": "Testowa" }
+      "data": { "firstName": "Anna", "lastName": "Testowa" },
+      "metaData": { "layer": 0, "order": 0 }
     },
-    { "id": "person-mia", "data": { "firstName": "Mia" } },
+    {
+      "id": "person-mia",
+      "data": { "firstName": "Mia" },
+      "metaData": { "layer": 1, "order": 0 }
+    },
     {
       "id": "person-piotr",
-      "data": { "firstName": "Piotr", "lastName": "Przykładowy" }
+      "data": { "firstName": "Piotr", "lastName": "Przykładowy" },
+      "metaData": { "layer": 0, "order": 1 }
     },
-    { "id": "person-olek", "data": { "firstName": "Olek" } }
+    {
+      "id": "person-olek",
+      "data": { "firstName": "Olek" },
+      "metaData": { "layer": 1, "order": 1 }
+    }
   ],
   "edges": [
     { "from": "person-anna", "to": "person-mia", "type": "child" },
