@@ -3,6 +3,20 @@
 Exported files are UTF-8 JSON with two-space indentation and a trailing newline.
 They contain the tree itself, not interface state or export timestamps.
 
+## Export behavior by browser
+
+On desktop Chrome, Edge, and Opera, the first export opens the browser's native
+save dialog. Later exports overwrite the file selected for this session. In
+Firefox, Safari (including iOS), and Android Chrome, the app asks for a file
+name in the app and then downloads a new copy on each export. The browser may
+add a number if a file with that name already exists. In every browser, use
+**Export as…** to select another name or location. The selected file is kept
+only in memory and is forgotten when the app is reloaded.
+
+After importing a `.json` file, its name is suggested for the next export, but
+the imported file is not overwritten directly. The browser asks you to choose
+or confirm the export target.
+
 ## Fields
 
 - `version` is the format version. The current version is `1`.

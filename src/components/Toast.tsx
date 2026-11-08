@@ -1,7 +1,12 @@
 import { useTranslation } from 'react-i18next'
 
 export type ToastMessage =
-  | { kind: 'export-success'; filename: string }
+  | {
+      kind: 'export-success'
+      filename: string
+      updated?: boolean
+      duplicateHint?: boolean
+    }
   | { kind: 'export-error' }
   | { kind: 'import-success'; count: number }
   | { kind: 'import-error' }
@@ -49,7 +54,14 @@ export default function Toast({ message, onClose, onUndo }: ToastProps) {
         <p>{t('deleteRestored', { name: message.name })}</p>
       ) : (
         <>
-          <p>{t('exportToastTitle', { filename: message.filename })}</p>
+          <p>
+            {message.updated
+              ? t('exportToastUpdated', { filename: message.filename })
+              : t('exportToastTitle', { filename: message.filename })}
+          </p>
+          {message.duplicateHint && (
+            <p className="export-toast__privacy">{t('exportDuplicateHint')}</p>
+          )}
           <p className="export-toast__privacy">{t('exportToastPrivacy')}</p>
         </>
       )}

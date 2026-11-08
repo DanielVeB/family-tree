@@ -116,7 +116,7 @@ Ask only when there is something to ask, and pre-select the likely answer. Keep 
 
 In scope:
 1. **Import** a `.json` file (file picker and drag-and-drop on desktop). Validate with zod. On failure, show a clear, friendly error and keep the current tree untouched.
-2. **Export** the current tree as a downloaded `.json` file (`Blob` plus `<a download>`). Filename like `family-tree-YYYY-MM-DD.json`.
+2. **Export** the current tree as a `.json` file. The default name is `family-tree-YYYY-MM-DD.json`; users can choose a name, and repeat exports overwrite the same file where the browser supports it.
 3. **View** the nodes and relationship edges on a pannable, zoomable canvas with person cards and connector lines.
 4. **Select** a person to open the detail view (bottom sheet on mobile, side panel on desktop).
 5. **Add** a person (as parent, partner, child, or sibling of the selected person) and a standalone first person for an empty tree.
@@ -132,8 +132,9 @@ Out of scope for v1 (do not build unless asked): accounts, cloud sync, collabora
 
 ## 7. Import/Export Requirements
 
-- **Use only universally supported APIs as the main path:** `<input type="file">`, `FileReader` or `file.text()`, `Blob`, `URL.createObjectURL`, `<a download>`. These work in Chrome, Safari (including iOS), Firefox, and Edge.
-- The File System Access API may be added only as an optional enhancement. It must never be required.
+- **Use universally supported APIs for the guaranteed fallback:** `<input type="file">`, `FileReader` or `file.text()`, `Blob`, `URL.createObjectURL`, `<a download>`. These work in Chrome, Safari (including iOS), Firefox, and Edge.
+- The File System Access API is an optional export enhancement, selected only by feature detection; the download path remains the guaranteed fallback. Never require the API.
+- Story 008 supersedes story 003's no-custom-filename scope and its exclusion of the File System Access API.
 - Validation errors should say what is wrong in plain language (for example "This file is missing the 'nodes' section"), not dump raw zod output.
 - Never silently overwrite the current tree on import. If the tree has unsaved or unexported changes, confirm first.
 - Revoke object URLs after export to avoid leaks.

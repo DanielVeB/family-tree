@@ -1,10 +1,239 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildExportFilename,
+  exportWithFileSystemAccess,
+  getImportedExportTarget,
+  normalizeFileName,
   serializeTree,
   startTreeDownload,
+  type SaveFileHandle,
 } from './exportTree'
 import { TreeSchema } from '../model/tree'
+import { parseTreeFile } from './importTree'
+
+describe('normalizeFileName', () => {
+  it('keeps Unicode letters and replaces invalid characters with spaces', () => {
+    expect(normalizeFileName('Rodzina: Łukasz/Żółtowski?')).toEqual({
+      ok: true,
+      name: 'Rodzina Łukasz Żółtowski.json',
+    })
+    expect(normalizeFileName('Łódź\\Test*Name" <1>|2')).toEqual({
+      ok: true,
+      name: 'Łódź Test Name 1 2.json',
+    })
+    expect(normalizeFileName('Anna\u0000\tTest')).toEqual({
+      ok: true,
+      name: 'Anna Test.json',
+    })
+  })
+
+  it('collapses whitespace, normalizes NFC, strips trailing dots, and avoids a doubled extension', () => {
+    expect(normalizeFileName('  Cafe\u0301   test... .JSON  ')).toEqual({
+      ok: true,
+      name: 'Café test.json',
+    })
+    expect(normalizeFileName('tree.json')).toEqual({
+      ok: true,
+      name: 'tree.json',
+    })
+    expect(normalizeFileName('tree.json.JSON')).toEqual({
+      ok: true,
+      name: 'tree.json',
+    })
+  })
+
+  it('rejects empty and overlong names and protects reserved Windows names', () => {
+    expect(normalizeFileName(' ... ')).toEqual({ ok: false, reason: 'empty' })
+    expect(normalizeFileName('a'.repeat(101))).toEqual({
+      ok: false,
+      reason: 'tooLong',
+    })
+    expect(normalizeFileName('CON')).toEqual({
+      ok: true,
+      name: 'CON_.json',
+    })
+    expect(normalizeFileName('com1.json')).toEqual({
+      ok: true,
+      name: 'com1_.json',
+    })
+  })
+
+  it('uses an imported JSON filename only as an unconfirmed suggestion', () => {
+    expect(getImportedExportTarget('my-tree.JSON')).toEqual({
+      name: 'my-tree.json',
+      confirmed: false,
+    })
+    expect(getImportedExportTarget('family-tree.txt')).toBeNull()
+    expect(getImportedExportTarget(`${'x'.repeat(101)}.json`)).toBeNull()
+  })
+})
+
+describe('exportWithFileSystemAccess', () => {
+  function makeHandle(
+    name = 'Rodzina Testowa.json',
+    permission: PermissionState = 'granted',
+  ) {
+    const written: string[] = []
+    const write = vi.fn(async (text: string) => {
+      written.push(text)
+    })
+    const close = vi.fn(async () => {})
+    const handle: SaveFileHandle = {
+      name,
+      createWritable: async () => ({ write, close }),
+      queryPermission: vi.fn(async () => permission),
+      requestPermission: vi.fn(async () => permission),
+    }
+    return { handle, write, close, written }
+  }
+
+  const tree = {
+    version: 1 as const,
+    nodes: [{ id: 'person-1', data: { firstName: 'Łucja Żółć' } }],
+    edges: [],
+  }
+
+  it('opens the picker and writes the serialized UTF-8 content', async () => {
+    const text = serializeTree(tree)
+    const { handle, write, close, written } = makeHandle()
+    const picker = vi.fn(async () => handle)
+
+    const result = await exportWithFileSystemAccess({
+      text,
+      target: null,
+      suggestedName: 'family-tree-2026-11-08.json',
+      forcePicker: false,
+      pickerType: 'Family tree file',
+      showSaveFilePicker: picker,
+    })
+
+    expect(picker).toHaveBeenCalledWith({
+      suggestedName: 'family-tree-2026-11-08.json',
+      types: [
+        {
+          description: 'Family tree file',
+          accept: { 'application/json': ['.json'] },
+        },
+      ],
+    })
+    expect(write).toHaveBeenCalledWith(text)
+    expect(new TextDecoder().decode(new TextEncoder().encode(written[0]))).toBe(
+      text,
+    )
+    expect(close).toHaveBeenCalledOnce()
+    expect(result).toEqual({
+      kind: 'exported',
+      target: { name: handle.name, handle, confirmed: true },
+      updated: false,
+    })
+  })
+
+  it('overwrites a permitted target and requests permission only when needed', async () => {
+    const { handle, write, close } = makeHandle('picked-tree.json', 'prompt')
+    const requestPermission = vi
+      .fn<() => Promise<PermissionState>>()
+      .mockResolvedValue('granted')
+    handle.queryPermission = vi.fn(
+      async (): Promise<PermissionState> => 'prompt',
+    )
+    handle.requestPermission = requestPermission
+    const picker = vi.fn()
+
+    const result = await exportWithFileSystemAccess({
+      text: '{"version":1}\n',
+      target: { name: 'old-name.json', handle, confirmed: true },
+      suggestedName: 'ignored.json',
+      forcePicker: false,
+      pickerType: 'Family tree file',
+      showSaveFilePicker: picker,
+    })
+
+    expect(handle.queryPermission).toHaveBeenCalledWith({
+      mode: 'readwrite',
+    })
+    expect(requestPermission).toHaveBeenCalledOnce()
+    expect(picker).not.toHaveBeenCalled()
+    expect(write).toHaveBeenCalledWith('{"version":1}\n')
+    expect(close).toHaveBeenCalledOnce()
+    expect(result).toMatchObject({
+      kind: 'exported',
+      target: { name: 'picked-tree.json' },
+      updated: true,
+    })
+  })
+
+  it('returns a silent result when the native picker is cancelled', async () => {
+    const picker = vi.fn(async () => {
+      throw Object.assign(new Error('cancelled'), { name: 'AbortError' })
+    })
+    await expect(
+      exportWithFileSystemAccess({
+        text: '{}',
+        target: null,
+        suggestedName: 'tree.json',
+        forcePicker: false,
+        pickerType: 'Family tree file',
+        showSaveFilePicker: picker,
+      }),
+    ).resolves.toEqual({ kind: 'cancelled' })
+  })
+
+  it('forgets a denied target and surfaces only the error name', async () => {
+    const { handle } = makeHandle('tree.json', 'denied')
+    await expect(
+      exportWithFileSystemAccess({
+        text: '{}',
+        target: { name: 'tree.json', handle, confirmed: true },
+        suggestedName: 'tree.json',
+        forcePicker: false,
+        pickerType: 'Family tree file',
+        showSaveFilePicker: vi.fn(),
+      }),
+    ).rejects.toMatchObject({
+      errorName: 'NotAllowedError',
+      forgetHandle: true,
+    })
+    expect(handle.requestPermission).toHaveBeenCalledOnce()
+  })
+
+  it('forgets an existing handle after a write failure', async () => {
+    const handle: SaveFileHandle = {
+      name: 'tree.json',
+      queryPermission: async () => 'granted',
+      createWritable: async () => ({
+        write: async () => {
+          throw Object.assign(new Error(), { name: 'NotReadableError' })
+        },
+        close: async () => {},
+      }),
+    }
+
+    await expect(
+      exportWithFileSystemAccess({
+        text: '{}',
+        target: { name: handle.name, handle, confirmed: true },
+        suggestedName: 'tree.json',
+        forcePicker: false,
+        pickerType: 'Family tree file',
+        showSaveFilePicker: vi.fn(),
+      }),
+    ).rejects.toMatchObject({
+      errorName: 'NotReadableError',
+      forgetHandle: true,
+    })
+  })
+
+  it('exports, imports, and exports byte-identically', async () => {
+    const first = serializeTree(tree)
+    const parsed = parseTreeFile(first)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(serializeTree(parsed.tree)).toBe(first)
+    expect(new TextEncoder().encode(serializeTree(parsed.tree))).toEqual(
+      new TextEncoder().encode(first),
+    )
+  })
+})
 
 describe('serializeTree', () => {
   const tree = {

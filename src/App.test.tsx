@@ -103,7 +103,11 @@ describe('start tree and add a relative', () => {
     expect(picker).toHaveBeenCalledOnce()
     expect(input.accept).toBe('.json,application/json')
     fireEvent.change(input, {
-      target: { files: [makeFile(validTreeFile)] },
+      target: {
+        files: [
+          makeFile(validTreeFile, async () => validTreeFile, 'my-tree.json'),
+        ],
+      },
     })
 
     expect(
@@ -111,6 +115,16 @@ describe('start tree and add a relative', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('Loaded from file')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Loaded 2 people')
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+    expect(await screen.findByLabelText('File name')).toHaveValue('my-tree')
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Export tree as a file' }),
+      ).toHaveFocus(),
+    )
     expect(input.value).toBe('')
     const afterImport = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(afterImport)
@@ -134,7 +148,9 @@ describe('start tree and add a relative', () => {
     const dialog = await screen.findByRole('dialog', {
       name: 'Replace your current tree?',
     })
-    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus(),
+    )
 
     await user.click(screen.getByRole('button', { name: 'PL' }))
     expect(
@@ -381,23 +397,27 @@ describe('start tree and add a relative', () => {
     })
     await user.click(exportButton)
 
+    expect(
+      await screen.findByRole('dialog', { name: 'Name your file' }),
+    ).toBeInTheDocument()
+    const nameInput = screen.getByLabelText('File name')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Rodzina: Łukasz/Żółtowski?')
+    await user.click(screen.getByRole('button', { name: 'Export' }))
+
     expect(click).toHaveBeenCalledOnce()
     expect(createObjectURL).toHaveBeenCalledOnce()
     const blob = createObjectURL.mock.calls[0]![0] as Blob
     expect(blob.type).toBe('application/json;charset=utf-8')
     expect(screen.getByText(/^Exported at/)).toBeInTheDocument()
     expect(
-      screen.getByText(/^Exported as family-tree-\d{4}-\d{2}-\d{2}\.json$/),
+      screen.getByText('Exported as Rodzina Łukasz Żółtowski.json'),
     ).toBeInTheDocument()
     const downloadLink = click.mock.instances[0] as HTMLAnchorElement
-    expect(downloadLink.download).toMatch(
-      /^family-tree-\d{4}-\d{2}-\d{2}\.json$/,
-    )
+    expect(downloadLink.download).toBe('Rodzina Łukasz Żółtowski.json')
     await user.click(screen.getByRole('button', { name: 'PL' }))
     expect(
-      screen.getByText(
-        /^Wyeksportowano jako family-tree-\d{4}-\d{2}-\d{2}\.json$/,
-      ),
+      screen.getByText('Wyeksportowano jako Rodzina Łukasz Żółtowski.json'),
     ).toBeInTheDocument()
     expect(screen.getByText(/^Wyeksportowano o/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'EN' }))
@@ -412,10 +432,207 @@ describe('start tree and add a relative', () => {
     await user.type(screen.getByLabelText('First name'), 'Jan')
     await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(screen.getByText('Changes not exported')).toBeInTheDocument()
+    await user.click(exportButton)
+    expect(click).toHaveBeenCalledTimes(2)
+    expect(
+      screen.getByText(
+        'Your browser may add a number if a file with this name already exists.',
+      ),
+    ).toBeInTheDocument()
     const afterChange = new Event('beforeunload', { cancelable: true })
     window.dispatchEvent(afterChange)
-    expect(afterChange.defaultPrevented).toBe(true)
+    expect(afterChange.defaultPrevented).toBe(false)
     expect(revokeObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('uses the native save picker and overwrites the selected file on repeat exports', async () => {
+    const user = userEvent.setup()
+    const write = vi.fn(async () => {})
+    const close = vi.fn(async () => {})
+    const handle = {
+      name: 'picked-tree.json',
+      createWritable: vi.fn(async () => ({ write, close })),
+      queryPermission: vi.fn(async () => 'granted' as PermissionState),
+      requestPermission: vi.fn(async () => 'granted' as PermissionState),
+    }
+    const picker = vi.fn(async () => handle)
+    vi.stubGlobal('showSaveFilePicker', picker)
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+
+    await waitFor(() => expect(close).toHaveBeenCalledOnce())
+    expect(picker).toHaveBeenCalledWith({
+      suggestedName: expect.stringMatching(
+        /^family-tree-\d{4}-\d{2}-\d{2}\.json$/,
+      ),
+      types: [
+        {
+          description: 'Family tree file',
+          accept: { 'application/json': ['.json'] },
+        },
+      ],
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Exported as picked-tree.json',
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+    await user.type(screen.getByLabelText('First name'), 'Mia')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+
+    await waitFor(() => expect(close).toHaveBeenCalledTimes(2))
+    expect(picker).toHaveBeenCalledOnce()
+    expect(handle.queryPermission).toHaveBeenCalledWith({
+      mode: 'readwrite',
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Updated picked-tree.json',
+    )
+  })
+
+  it('validates the fallback filename and focuses/selects the suggestion', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+
+    const input = (await screen.findByLabelText(
+      'File name',
+    )) as HTMLInputElement
+    expect(input).toHaveFocus()
+    expect(input.selectionStart).toBe(0)
+    expect(input.selectionEnd).toBe(input.value.length)
+    await user.clear(input)
+    await user.click(screen.getByRole('button', { name: 'Export' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Enter a file name')
+
+    await user.type(input, 'a'.repeat(101))
+    await user.click(screen.getByRole('button', { name: 'Export' }))
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Maximum 100 characters',
+    )
+  })
+
+  it('does not change export state or show feedback when the native picker is cancelled', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal(
+      'showSaveFilePicker',
+      vi.fn(async () => {
+        throw Object.assign(new Error('cancelled'), { name: 'AbortError' })
+      }),
+    )
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: 'Export tree as a file' }),
+      ).toBeEnabled()
+    })
+    expect(screen.getByText('Not exported yet')).toBeInTheDocument()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(logError).not.toHaveBeenCalled()
+  })
+
+  it('lets the fallback export menu replace the named target and keeps typed text on language switch', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:family-tree'),
+      revokeObjectURL: vi.fn(),
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+    const firstNameInput = await screen.findByLabelText('File name')
+    await user.clear(firstNameInput)
+    await user.type(firstNameInput, 'Rodzina Testowa')
+    await user.keyboard('{Enter}')
+
+    await user.click(
+      screen.getByRole('button', { name: 'More export options' }),
+    )
+    expect(
+      screen.getByText('Current file: Rodzina Testowa.json'),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Export as…' }))
+    const nextNameInput = await screen.findByLabelText('File name')
+    expect(nextNameInput).toHaveValue('Rodzina Testowa')
+    await user.clear(nextNameInput)
+    await user.type(nextNameInput, 'Łukasz Żółtowski')
+    await user.click(screen.getByRole('button', { name: 'PL' }))
+    expect(screen.getByLabelText('Nazwa pliku')).toHaveValue('Łukasz Żółtowski')
+    await user.keyboard('{Enter}')
+    expect(
+      screen.getByText('Wyeksportowano jako Łukasz Żółtowski.json'),
+    ).toBeInTheDocument()
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Eksportuj drzewo do pliku' }),
+      ).toHaveFocus(),
+    )
+  })
+
+  it('clears the export target when a new tree is created after deleting the old one', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:family-tree'),
+      revokeObjectURL: vi.fn(),
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+    const firstNameInput = await screen.findByLabelText('File name')
+    await user.clear(firstNameInput)
+    await user.type(firstNameInput, 'old-tree')
+    await user.keyboard('{Enter}')
+
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Delete person' }))
+    await user.click(screen.getByRole('button', { name: /^Delete$/ }))
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    const newFirstName = screen.getByLabelText('First name')
+    await waitFor(() => expect(newFirstName).toHaveFocus())
+    await user.type(newFirstName, 'Mia')
+    expect(newFirstName).toHaveValue('Mia')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+
+    const suggestedName = await screen.findByLabelText('File name')
+    expect((suggestedName as HTMLInputElement).value).toMatch(
+      /^family-tree-\d{4}-\d{2}-\d{2}$/,
+    )
   })
 
   it('does not download or clear the dirty status when validation fails', async () => {
@@ -537,6 +754,8 @@ describe('edit and delete people', () => {
     await user.click(
       screen.getByRole('button', { name: 'Export tree as a file' }),
     )
+    await screen.findByRole('dialog', { name: 'Name your file' })
+    await user.click(screen.getByRole('button', { name: 'Export' }))
     await user.click(screen.getByRole('button', { name: 'Delete person' }))
     expect(
       screen.getByRole('button', { name: 'Delete person' }),
@@ -546,7 +765,9 @@ describe('edit and delete people', () => {
       '2 relationships will be removed along with this person.',
     )
     expect(dialog).not.toHaveTextContent('split into')
-    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus(),
+    )
     await user.keyboard('{Escape}')
     expect(screen.getByRole('button', { name: 'Anna' })).toBeInTheDocument()
     await waitFor(() =>
@@ -657,8 +878,9 @@ describe('edit and delete people', () => {
 function makeFile(
   text: string,
   readText: () => Promise<string> = async () => text,
+  fileName = 'family-tree.json',
 ) {
-  const file = new File([text], 'family-tree.json', {
+  const file = new File([text], fileName, {
     type: 'application/json',
   })
   Object.defineProperty(file, 'text', { value: readText })

@@ -10,12 +10,18 @@ import { useTranslation } from 'react-i18next'
 import { ZodError } from 'zod'
 import Toast, { type ToastMessage } from './components/Toast'
 import NewTreeDialog from './components/NewTreeDialog'
+import NameExportDialog from './components/NameExportDialog'
 import ReplaceTreeDialog from './components/ReplaceTreeDialog'
 import TreeView from './components/TreeView'
 import {
   buildExportFilename,
+  exportWithFileSystemAccess,
+  FileExportError,
+  getBrowserSaveFilePicker,
+  getImportedExportTarget,
   serializeTree,
   startTreeDownload,
+  type ExportTarget,
 } from './io/exportTree'
 import { parseTreeFile } from './io/importTree'
 import {
@@ -38,6 +44,7 @@ interface AppState {
   revision: number
   exportedRevision: number | null
   exportedAt: Date | null
+  exportTarget: ExportTarget | null
   loadedFromFile: boolean
   viewKey: number
   undo: {
@@ -60,8 +67,17 @@ type AppAction =
   | { type: 'delete-person'; tree: FamilyTree }
   | { type: 'undo-delete' }
   | { type: 'clear-undo' }
-  | { type: 'export-started'; exportedAt: Date }
-  | { type: 'imported'; tree: FamilyTree }
+  | {
+      type: 'export-started'
+      exportedAt: Date
+      exportTarget: ExportTarget
+    }
+  | { type: 'forget-export-handle' }
+  | {
+      type: 'imported'
+      tree: FamilyTree
+      exportTarget: ExportTarget | null
+    }
 
 function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -72,6 +88,7 @@ function reducer(state: AppState, action: AppAction): AppState {
         revision: state.revision + 1,
         exportedRevision: state.exportedRevision,
         exportedAt: state.exportedAt,
+        exportTarget: null,
         loadedFromFile: false,
         viewKey: state.viewKey,
         undo: null,
@@ -129,11 +146,22 @@ function reducer(state: AppState, action: AppAction): AppState {
     case 'export-started':
       return {
         ...state,
+        exportTarget: action.exportTarget,
         exportedRevision: state.revision,
         exportedAt: action.exportedAt,
         loadedFromFile: false,
         hasUnexportedEditOrDelete: false,
       }
+    case 'forget-export-handle':
+      return state.exportTarget?.handle
+        ? {
+            ...state,
+            exportTarget: {
+              name: state.exportTarget.name,
+              confirmed: false,
+            },
+          }
+        : state
     case 'imported': {
       const revision = state.revision + 1
       return {
@@ -142,6 +170,7 @@ function reducer(state: AppState, action: AppAction): AppState {
         revision,
         exportedRevision: revision,
         exportedAt: null,
+        exportTarget: action.exportTarget,
         loadedFromFile: true,
         viewKey: state.viewKey + 1,
         undo: null,
@@ -159,19 +188,30 @@ function App() {
     revision: 0,
     exportedRevision: null,
     exportedAt: null,
+    exportTarget: null,
     loadedFromFile: false,
     viewKey: 0,
     undo: null,
     hasUnexportedEditOrDelete: false,
   })
   const [showNewTreeDialog, setShowNewTreeDialog] = useState(false)
-  const [pendingImport, setPendingImport] = useState<FamilyTree | null>(null)
+  const [pendingImport, setPendingImport] = useState<{
+    tree: FamilyTree
+    fileName: string
+  } | null>(null)
+  const [pendingExport, setPendingExport] = useState<{
+    text: string
+    suggestedName: string
+  } | null>(null)
+  const [showExportMenu, setShowExportMenu] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const importButtonRef = useRef<HTMLButtonElement>(null)
+  const exportButtonRef = useRef<HTMLButtonElement>(null)
+  const exportMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const exportMenuRef = useRef<HTMLDivElement>(null)
   const exportBusyRef = useRef(false)
-  const exportBusyTimeoutRef = useRef<number | null>(null)
   const exportToastTimeoutRef = useRef<number | null>(null)
   const focusAfterTreeActionRef = useRef<'delete' | 'undo' | null>(null)
   const hasTree = state.tree.nodes.length > 0
@@ -218,9 +258,6 @@ function App() {
 
   useEffect(
     () => () => {
-      if (exportBusyTimeoutRef.current !== null) {
-        window.clearTimeout(exportBusyTimeoutRef.current)
-      }
       if (exportToastTimeoutRef.current !== null) {
         window.clearTimeout(exportToastTimeoutRef.current)
       }
@@ -236,6 +273,30 @@ function App() {
     window.addEventListener('keydown', cancelOnEscape)
     return () => window.removeEventListener('keydown', cancelOnEscape)
   }, [showNewTreeDialog])
+
+  useEffect(() => {
+    if (!showExportMenu) return
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !exportMenuRef.current?.contains(event.target)
+      ) {
+        setShowExportMenu(false)
+      }
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowExportMenu(false)
+        exportMenuButtonRef.current?.focus()
+      }
+    }
+    window.addEventListener('pointerdown', closeOnOutsideClick)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeOnOutsideClick)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [showExportMenu])
 
   const changeLanguage = (language: 'en' | 'pl') => {
     window.localStorage.setItem('family-tree-language', language)
@@ -321,46 +382,136 @@ function App() {
     }, duration)
   }
 
-  function showExportFeedback(filename: string | null) {
-    showToast(
-      filename
-        ? { kind: 'export-success', filename }
-        : { kind: 'export-error' },
-    )
-  }
-
-  function exportTree() {
-    if (exportBusyRef.current || !hasTree) return
-    exportBusyRef.current = true
-    setExportBusy(true)
-    exportBusyTimeoutRef.current = window.setTimeout(() => {
-      exportBusyRef.current = false
-      exportBusyTimeoutRef.current = null
-      setExportBusy(false)
-    }, 350)
-
-    try {
-      const content = serializeTree(state.tree)
-      const filename = buildExportFilename(new Date())
-      startTreeDownload(content, filename)
-      dispatch({ type: 'export-started', exportedAt: new Date() })
-      showExportFeedback(filename)
-    } catch (error) {
-      if (error instanceof ZodError) {
-        console.error('Tree validation failed before export.')
-      } else {
-        console.error('Tree export could not be started.')
-      }
-      showExportFeedback(null)
+  function releaseExportBusy(restoreFocus = false) {
+    exportBusyRef.current = false
+    setExportBusy(false)
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => {
+        const activeElement = document.activeElement
+        if (
+          activeElement === document.body ||
+          activeElement === document.getElementById('export-file-name')
+        ) {
+          exportButtonRef.current?.focus()
+        }
+      })
     }
   }
 
-  function applyImport(tree: FamilyTree) {
+  function finishExport(
+    target: ExportTarget,
+    updated: boolean,
+    duplicateHint = false,
+  ) {
+    const exportedAt = new Date()
+    dispatch({ type: 'export-started', exportedAt, exportTarget: target })
+    showToast({
+      kind: 'export-success',
+      filename: target.name,
+      updated,
+      duplicateHint,
+    })
+  }
+
+  function handleExportError(error: unknown) {
+    if (error instanceof ZodError) {
+      console.error('Tree validation failed before export.')
+    } else {
+      const errorName =
+        error instanceof FileExportError
+          ? error.errorName
+          : error instanceof Error
+            ? error.name
+            : 'UnknownError'
+      console.error(errorName)
+    }
+    showToast({ kind: 'export-error' })
+  }
+
+  function exportTree(forcePicker = false) {
+    if (exportBusyRef.current || !hasTree) return
+    exportBusyRef.current = true
+    setExportBusy(true)
+
+    let text: string
+    try {
+      text = serializeTree(state.tree)
+    } catch (error) {
+      handleExportError(error)
+      releaseExportBusy()
+      return
+    }
+
+    const suggestedName =
+      state.exportTarget?.name ?? buildExportFilename(new Date())
+    const picker = getBrowserSaveFilePicker()
+    if (picker) {
+      void exportWithFileSystemAccess({
+        text,
+        target: state.exportTarget,
+        suggestedName,
+        forcePicker,
+        pickerType: t('exportNamePickerType'),
+        showSaveFilePicker: picker,
+      })
+        .then((result) => {
+          if (result.kind === 'cancelled') return
+          finishExport(result.target, result.updated)
+        })
+        .catch((error: unknown) => {
+          if (error instanceof FileExportError && error.forgetHandle) {
+            dispatch({ type: 'forget-export-handle' })
+          }
+          handleExportError(error)
+        })
+        .finally(() => releaseExportBusy())
+      return
+    }
+
+    if (forcePicker || !state.exportTarget?.confirmed) {
+      setPendingExport({ text, suggestedName })
+      return
+    }
+
+    try {
+      startTreeDownload(text, state.exportTarget.name)
+      finishExport(state.exportTarget, false, true)
+    } catch (error) {
+      handleExportError(error)
+    } finally {
+      releaseExportBusy()
+    }
+  }
+
+  function exportNamedFile(filename: string) {
+    if (!pendingExport) return
+    try {
+      startTreeDownload(pendingExport.text, filename)
+      finishExport({ name: filename, confirmed: true }, false)
+      setPendingExport(null)
+      releaseExportBusy(true)
+    } catch (error) {
+      handleExportError(error)
+      setPendingExport(null)
+      releaseExportBusy(true)
+    }
+  }
+
+  function cancelNamedExport() {
+    setPendingExport(null)
+    releaseExportBusy(true)
+  }
+
+  function applyImport(imported: { tree: FamilyTree; fileName: string }) {
     clearToast()
-    dispatch({ type: 'imported', tree })
+    dispatch({
+      type: 'imported',
+      tree: imported.tree,
+      exportTarget: getImportedExportTarget(imported.fileName),
+    })
     setPendingImport(null)
     setShowNewTreeDialog(false)
-    showToast({ kind: 'import-success', count: tree.nodes.length })
+    showToast({ kind: 'import-success', count: imported.tree.nodes.length })
   }
 
   async function importFile(file: File | undefined) {
@@ -371,11 +522,12 @@ function App() {
         showToast({ kind: 'import-error' })
         return
       }
+      const imported = { tree: result.tree, fileName: file.name }
       if (hasUnexportedChanges) {
-        setPendingImport(result.tree)
+        setPendingImport(imported)
         return
       }
-      applyImport(result.tree)
+      applyImport(imported)
     } catch {
       showToast({ kind: 'import-error' })
     }
@@ -431,14 +583,52 @@ function App() {
                 {t('importButton')}
               </button>
               <button
+                ref={exportButtonRef}
                 className={`button button--ghost export-button${status === 'never' || status === 'dirty' ? ' export-button--dirty' : ''}`}
                 type="button"
                 disabled={exportBusy}
                 aria-label={t('exportButtonLabel')}
-                onClick={exportTree}
+                onClick={() => exportTree()}
               >
                 {t('exportButton')}
               </button>
+              <div className="export-more" ref={exportMenuRef}>
+                <button
+                  ref={exportMenuButtonRef}
+                  className="icon-pill"
+                  type="button"
+                  aria-label={t('exportMoreLabel')}
+                  aria-expanded={showExportMenu}
+                  aria-controls={
+                    showExportMenu ? 'export-options-menu' : undefined
+                  }
+                  onClick={() => setShowExportMenu((open) => !open)}
+                >
+                  <span aria-hidden="true">⌄</span>
+                </button>
+                {showExportMenu && (
+                  <div className="panel export-menu" id="export-options-menu">
+                    {state.exportTarget && (
+                      <p className="export-menu__current">
+                        {t('exportCurrentFile', {
+                          filename: state.exportTarget.name,
+                        })}
+                      </p>
+                    )}
+                    <button
+                      className="export-menu__item"
+                      type="button"
+                      onClick={() => {
+                        setShowExportMenu(false)
+                        exportMenuButtonRef.current?.focus()
+                        exportTree(true)
+                      }}
+                    >
+                      {t('exportAs')}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
           <div
@@ -508,6 +698,13 @@ function App() {
         <NewTreeDialog
           onCreate={createTree}
           onCancel={() => setShowNewTreeDialog(false)}
+        />
+      )}
+      {pendingExport && (
+        <NameExportDialog
+          suggestedName={pendingExport.suggestedName}
+          onExport={exportNamedFile}
+          onCancel={cancelNamedExport}
         />
       )}
       <input

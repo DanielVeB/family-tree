@@ -8,9 +8,14 @@ A private, client-side family tree app. Family data stays in your browser and is
 
 Exported files contain personal data. Store them securely and share them only with people you trust. See the [JSON file format guide](docs/file-format.md) for the file structure and relationship rules.
 
-Use **Import a file** to load a previously exported family tree. Use **Export**
-to download the current tree as a JSON file. Importing replaces the open tree;
-the app asks for confirmation first if it has changes that were not exported.
+Use **Import a file** to load a previously exported family tree. On desktop
+Chrome, Edge, and Opera, **Export** opens a native save dialog the first time
+and later exports overwrite that selected file. Firefox, Safari (including
+iPhone), and Android Chrome download a new copy with the same chosen name; the
+browser may add a number when that name already exists. Use **Export as…** to
+choose another name or location. The selected file is forgotten when you
+reload the app. Importing replaces the open tree; the app asks for confirmation
+first if it has changes that were not exported.
 
 ## Run locally
 

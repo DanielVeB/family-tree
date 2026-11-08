@@ -13,6 +13,14 @@
     U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
+.name-export-dialog h2 {
+  margin: 0 0 24px;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.9px;
+}
+
 @font-face {
   font-family: Inter;
   font-style: normal;
@@ -92,6 +100,41 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.export-more {
+  position: relative;
+}
+
+.export-menu {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(260px, calc(100vw - 32px));
+  padding: 8px;
+}
+
+.export-menu__item {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--oak);
+  text-align: left;
+  cursor: pointer;
+}
+
+.export-menu__current {
+  margin: 4px 8px 8px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .export-status {
@@ -645,6 +688,29 @@ h1 {
   font-size: 14px;
 }
 
+.field__hint {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.export-name-input {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-name-input input {
+  min-width: 0;
+  flex: 1;
+}
+
+.export-name-input > span {
+  color: var(--muted);
+  font-size: 16px;
+}
+
 .form-actions {
   display: flex;
   flex-wrap: wrap;
@@ -683,6 +749,11 @@ h1 {
 }
 
 .replace-tree-dialog {
+  width: min(100%, 480px);
+  padding: 24px;
+}
+
+.name-export-dialog {
   width: min(100%, 480px);
   padding: 24px;
 }
@@ -815,6 +886,10 @@ h1 {
   .language-toggle button:hover:not([aria-pressed='true']) {
     background: var(--tint-hover);
   }
+
+  .export-menu__item:hover {
+    background: var(--tint-hover);
+  }
 }
 
 @media (max-width: 639px) {
@@ -853,6 +928,12 @@ h1 {
   }
 
   .replace-tree-dialog {
+    align-self: end;
+    padding: 24px 16px max(24px, env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0;
+  }
+
+  .name-export-dialog {
     align-self: end;
     padding: 24px 16px max(24px, env(safe-area-inset-bottom));
     border-radius: 16px 16px 0 0;
