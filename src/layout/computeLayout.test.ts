@@ -263,7 +263,7 @@ describe('computeLayout', () => {
     expect(layout.edgePaths[0]!.path.match(/M /g)).toHaveLength(6)
     const secondParent = layout.positions['parent-b']!
     expect(layout.edgePaths[0]!.path).toContain(
-      `M ${(layout.positions['parent-a']!.x + 200 + secondParent.x) / 2} ${secondParent.y + 44} V`,
+      `M ${(layout.positions['parent-a']!.x + 200 + secondParent.x) / 2} ${secondParent.y + LAYOUT_SPACING.cardHeight / 2} V`,
     )
     expectNoOverlaps(layout, ids)
   })
@@ -450,7 +450,7 @@ describe('computeLayout', () => {
     ).toEqual(['first', 'middle', 'last'])
     expect(layout.cardCenters.first).toEqual({
       x: layout.positions.first!.x + 100,
-      y: layout.positions.first!.y + 44,
+      y: layout.positions.first!.y + LAYOUT_SPACING.cardHeight / 2,
     })
 
     expect(layout.rowBands[0]).toMatchObject({
@@ -619,7 +619,7 @@ function expectNoOverlaps(
   layout: ReturnType<typeof computeLayout>,
   ids: string[],
   width = 200,
-  height = 88,
+  height = LAYOUT_SPACING.cardHeight,
 ) {
   for (let first = 0; first < ids.length; first += 1) {
     for (let second = first + 1; second < ids.length; second += 1) {

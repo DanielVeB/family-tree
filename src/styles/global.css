@@ -395,21 +395,21 @@ h1 {
   position: absolute;
   z-index: 1;
   display: flex;
-  min-height: 88px;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  overflow: hidden;
+  height: 136px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 8px 12px;
+  overflow: visible;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   background: var(--cream);
   color: var(--oak);
-  text-align: left;
-  cursor: pointer;
   user-select: none;
 }
 
-.person-card[aria-pressed='true'] {
+.person-card--selected {
+  z-index: 4;
   outline: 2px solid var(--ring);
   outline-offset: 0;
 }
@@ -435,6 +435,79 @@ h1 {
   visibility: hidden;
 }
 
+.person-card__identity {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.person-card__identity:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.person-card__controls {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: stretch;
+  gap: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 11px 11px;
+}
+
+.person-card__control-wrap {
+  position: relative;
+  min-width: 0;
+  height: 44px;
+  flex: 1 1 0;
+}
+
+.person-card__control-wrap + .person-card__control-wrap::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  border-left: 1px solid var(--border);
+  content: '';
+}
+
+.person-card__controls .person-card__control {
+  display: grid;
+  width: 100%;
+  height: 44px;
+  min-width: 0;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 18px;
+}
+
+.person-card__control-wrap:first-child .person-card__control {
+  border-bottom-left-radius: 11px;
+}
+
+.person-card__control-wrap:last-child .person-card__control {
+  border-bottom-right-radius: 11px;
+}
+
 .drag-level-band {
   position: absolute;
   z-index: 0;
@@ -442,7 +515,9 @@ h1 {
   border-radius: var(--radius-card);
   background: var(--tint-faint);
   pointer-events: none;
-  transition: background-color 150ms ease, outline-color 150ms ease;
+  transition:
+    background-color 150ms ease,
+    outline-color 150ms ease;
 }
 
 .drag-level-band > span {
@@ -469,7 +544,9 @@ h1 {
   border-radius: var(--radius-pill);
   background: var(--ring);
   pointer-events: none;
-  transition: left 150ms ease, top 150ms ease;
+  transition:
+    left 150ms ease,
+    top 150ms ease;
 }
 
 .person-card__avatar {
@@ -486,15 +563,11 @@ h1 {
 }
 
 .person-card__name {
-  display: -webkit-box;
   min-width: 0;
-  overflow: hidden;
+  overflow-wrap: anywhere;
   font-size: 16px;
   font-weight: 600;
   line-height: 1.25;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .canvas-controls {
@@ -505,6 +578,115 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.node-actions {
+  position: absolute;
+  z-index: 4;
+  inset: 0;
+  pointer-events: none;
+}
+
+.node-action-button-shell {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  pointer-events: auto;
+}
+
+.node-action-button-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+}
+
+.node-action-button {
+  width: 36px;
+  height: 36px;
+  margin: 4px;
+  border: 1px solid var(--border);
+  background: var(--cream);
+  box-shadow: var(--shadow-inset);
+  color: var(--oak);
+  font-size: 20px;
+  line-height: 1;
+  animation: node-action-fade 150ms ease-out;
+}
+
+.node-action-button[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.node-move-popover {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 4px);
+  right: 0;
+  width: max-content;
+  max-width: min(220px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--cream);
+  animation: node-action-fade 150ms ease-out;
+}
+
+.node-move-popover__label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.node-move-popover__row {
+  display: flex;
+  gap: 8px;
+}
+
+.node-move-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  box-shadow: none;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 12;
+  max-width: 240px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--cream);
+  color: var(--oak);
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.tooltip--top {
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.tooltip--bottom {
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.tooltip--left {
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.tooltip--right {
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .icon-pill {
@@ -915,9 +1097,29 @@ h1 {
   line-height: 1.5;
 }
 
+@keyframes node-action-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .node-action-button,
+  .node-move-popover {
+    animation: none;
+  }
+}
+
 @media (hover: hover) {
   .person-card:hover {
     border-color: var(--border-strong);
+  }
+
+  .person-card__controls .person-card__control:hover {
+    background: var(--tint-hover);
   }
 }
 

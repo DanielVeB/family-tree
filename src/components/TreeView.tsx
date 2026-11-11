@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import DeletePersonDialog from './DeletePersonDialog'
+import { InlineNodeControls, NodeActions } from './NodeActions'
 import {
   computeLayout,
   LAYOUT_SPACING,
@@ -19,14 +20,10 @@ import {
   getDeletePreview,
   getConnectedParts,
   getMoveLevelAvailability,
-  getChildrenOf,
   getConnectionQuestions,
   getDefaultConnectionAnswers,
   getDisplayName,
   getParentCount,
-  getParentsOf,
-  getPartnersOf,
-  getSiblingsOf,
   moveOne,
   TreeOperationError,
   type FamilyTree,
@@ -67,18 +64,6 @@ interface DragPreview {
   partIds: string[]
 }
 
-const relationButtons: Array<{ kind: RelativeKind; label: string }> = [
-  { kind: 'parent', label: 'addParent' },
-  { kind: 'child', label: 'addChild' },
-  { kind: 'sibling', label: 'addSibling' },
-  { kind: 'partner', label: 'addPartner' },
-]
-const relationGroups = [
-  { type: 'parents', label: 'parents' },
-  { type: 'children', label: 'children' },
-  { type: 'siblings', label: 'siblings' },
-  { type: 'partners', label: 'partners' },
-] as const
 const minZoom = 0.25
 const maxZoom = 2
 
@@ -99,6 +84,22 @@ export default function TreeView({
     () => computeLayout(tree, cardWidth),
     [tree, cardWidth],
   )
+  const peopleByLayer = useMemo(() => {
+    const rows = new Map<number, PersonNode[]>()
+    for (const person of tree.nodes) {
+      const row = rows.get(person.metaData.layer) ?? []
+      row.push(person)
+      rows.set(person.metaData.layer, row)
+    }
+    return new Map(
+      [...rows].map(([layer, people]) => [
+        layer,
+        people
+          .sort((left, right) => left.metaData.order - right.metaData.order)
+          .map(({ id }) => id),
+      ]),
+    )
+  }, [tree.nodes])
   const canvasRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 })
   const userMovedRef = useRef(false)
@@ -141,8 +142,6 @@ export default function TreeView({
   const [moveAnnouncement, setMoveAnnouncement] = useState('')
   const connectionChoiceRef = useRef<HTMLInputElement>(null)
   const relativeFirstNameRef = useRef<HTMLInputElement>(null)
-  const editButtonRef = useRef<HTMLButtonElement>(null)
-  const deleteButtonRef = useRef<HTMLButtonElement>(null)
   const formWasOpenRef = useRef(false)
 
   const selectedPerson = tree.nodes.find((node) => node.id === selectedId)
@@ -164,7 +163,8 @@ export default function TreeView({
       const person = tree.nodes.find(({ id }) => id === request.personId)
       if (!person) return
       const dropX =
-        (request.centers?.[request.personId] ?? person.metaData.order) + request.dx
+        (request.centers?.[request.personId] ?? person.metaData.order) +
+        request.dx
       const result = moveOne(
         tree,
         request.personId,
@@ -418,7 +418,7 @@ export default function TreeView({
       formWasOpenRef.current = false
       if (selectedId) {
         window.requestAnimationFrame(() =>
-          document.getElementById(`person-${selectedId}`)?.focus(),
+          focusPersonControl(selectedId, 'identity'),
         )
       }
     }
@@ -436,7 +436,7 @@ export default function TreeView({
     onSelect(null)
     if (closingId) {
       window.requestAnimationFrame(() =>
-        document.getElementById(`person-${closingId}`)?.focus(),
+        focusPersonControl(closingId, 'identity'),
       )
     }
   }, [onSelect, selectedId])
@@ -445,8 +445,10 @@ export default function TreeView({
     setEditing(false)
     setFormError('')
     setFormErrorField(null)
-    window.requestAnimationFrame(() => editButtonRef.current?.focus())
-  }, [])
+    if (selectedId) {
+      window.requestAnimationFrame(() => focusPersonControl(selectedId, 'edit'))
+    }
+  }, [selectedId])
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -521,7 +523,11 @@ export default function TreeView({
       setFormError('')
       setFormErrorField(null)
       setEditAnnounced(changed)
-      window.requestAnimationFrame(() => editButtonRef.current?.focus())
+      if (selectedId) {
+        window.requestAnimationFrame(() =>
+          focusPersonControl(selectedId, 'edit'),
+        )
+      }
     } catch (error) {
       if (!(error instanceof TreeOperationError)) throw error
       setFormError(error.code)
@@ -619,7 +625,7 @@ export default function TreeView({
         : null
     if (
       event.target instanceof Element &&
-      event.target.closest('.canvas-controls')
+      event.target.closest('.canvas-controls, .person-card__controls')
     )
       return
     if (typeof event.currentTarget.setPointerCapture === 'function') {
@@ -844,7 +850,7 @@ export default function TreeView({
 
   return (
     <div
-      className={`tree-workspace${selectedPerson ? ' tree-workspace--detail-open' : ''}`}
+      className={`tree-workspace${relativeForm || editing ? ' tree-workspace--detail-open' : ''}`}
     >
       <div
         ref={canvasRef}
@@ -924,6 +930,10 @@ export default function TreeView({
           {tree.nodes.map((person) => {
             const originalPoint = layout.positions[person.id]
             const point = originalPoint
+            const personLevels = selectedId === person.id ? selectedLevels : []
+            const personName = getDisplayName(person)
+            const row = peopleByLayer.get(person.metaData.layer) ?? []
+            const rowIndex = row.indexOf(person.id)
             return (
               <PersonCard
                 key={person.id}
@@ -934,6 +944,34 @@ export default function TreeView({
                 held={heldPersonId === person.id}
                 dragging={drag?.personId === person.id}
                 dragConnected={false}
+                controls={
+                  <InlineNodeControls
+                    personId={person.id}
+                    personName={personName}
+                    currentLevel={person.metaData.layer}
+                    selectedLevels={personLevels}
+                    canMoveLeft={rowIndex > 0}
+                    canMoveRight={rowIndex >= 0 && rowIndex < row.length - 1}
+                    onEdit={() => {
+                      onSelect(person.id)
+                      setRelativeForm(null)
+                      setFirstName(person.data.firstName)
+                      setLastName(person.data.lastName ?? '')
+                      setFormError('')
+                      setFormErrorField(null)
+                      setEditAnnounced(false)
+                      setEditing(true)
+                    }}
+                    onDelete={() => {
+                      onSelect(person.id)
+                      setDeletePreview(getDeletePreview(tree, person.id))
+                    }}
+                    moveDirection={(direction) =>
+                      moveDirection(direction, person.id)
+                    }
+                    onMoveOpen={() => onSelect(person.id)}
+                  />
+                }
                 onSelect={() => {
                   if (suppressCardClick.current) {
                     suppressCardClick.current = false
@@ -1016,7 +1054,36 @@ export default function TreeView({
         </div>
       </div>
 
-      {selectedPerson && (
+      {selectedPerson &&
+        !relativeForm &&
+        !editing &&
+        !deletePreview &&
+        !drag && (
+          <>
+            <NodeActions
+              selectedName={selectedName}
+              cardLeft={
+                viewport.x +
+                (layout.positions[selectedPerson.id]?.x ?? 0) * viewport.scale
+              }
+              cardTop={
+                viewport.y +
+                (layout.positions[selectedPerson.id]?.y ?? 0) * viewport.scale
+              }
+              cardWidth={cardWidth * viewport.scale}
+              cardHeight={LAYOUT_SPACING.cardHeight * viewport.scale}
+              selectedHasTwoParents={selectedHasTwoParents}
+              onAddRelative={openRelativeForm}
+            />
+            <span className="visually-hidden" aria-live="polite">
+              {moveAnnouncement}
+            </span>
+            <span className="visually-hidden" aria-live="polite">
+              {editAnnounced ? t('editNameAnnounce') : ''}
+            </span>
+          </>
+        )}
+      {selectedPerson && (relativeForm || editing) && (
         <aside className="panel detail-panel" aria-label={selectedName}>
           <button
             type="button"
@@ -1088,178 +1155,7 @@ export default function TreeView({
               onSubmit={submitEdit}
               onCancel={cancelEdit}
             />
-          ) : (
-            <>
-              <h2 className="detail-panel__name">{selectedName}</h2>
-              {!relativeForm && !editing && (
-                <section
-                  className="position-controls"
-                  aria-label={t('layers.controls')}
-                >
-                  <p>
-                    {t('layers.level', {
-                      level: selectedPerson.metaData.layer + 1,
-                    })}
-                  </p>
-                  <div className="position-controls__buttons">
-                    {(
-                      [
-                        ['up', '↑', 'layers.up'],
-                        ['down', '↓', 'layers.down'],
-                        ['left', '←', 'layers.left'],
-                        ['right', '→', 'layers.right'],
-                      ] as const
-                    ).map(([direction, icon, key]) => {
-                      const enabled =
-                        direction === 'up' || direction === 'down'
-                          ? selectedLevels.some(
-                              ({
-                                layer,
-                                onlyThisPersonValid,
-                                withConnectedPeopleValid,
-                              }) =>
-                                layer ===
-                                  selectedPerson.metaData.layer +
-                                    (direction === 'up' ? -1 : 1) &&
-                                (onlyThisPersonValid ||
-                                  withConnectedPeopleValid),
-                            )
-                          : (() => {
-                              const row = tree.nodes
-                                .filter(
-                                  (person) =>
-                                    person.metaData.layer ===
-                                    selectedPerson.metaData.layer,
-                                )
-                                .sort(
-                                  (a, b) => a.metaData.order - b.metaData.order,
-                                )
-                              const index = row.findIndex(
-                                ({ id }) => id === selectedPerson.id,
-                              )
-                              return direction === 'left'
-                                ? index > 0
-                                : index >= 0 && index < row.length - 1
-                            })()
-                      return (
-                        <button
-                          key={direction}
-                          className="icon-pill"
-                          type="button"
-                          aria-label={t(key)}
-                          title={t(key)}
-                          disabled={!enabled}
-                          aria-describedby={
-                            enabled
-                              ? undefined
-                              : direction === 'up' || direction === 'down'
-                                ? selectedLevels.some(
-                                    ({ layer }) =>
-                                      layer ===
-                                      selectedPerson.metaData.layer +
-                                        (direction === 'up' ? -1 : 1),
-                                  )
-                                  ? 'position-unavailable'
-                                  : 'position-no-neighbor'
-                                : 'position-no-neighbor'
-                          }
-                          onClick={() => moveDirection(direction)}
-                        >
-                          <span aria-hidden="true">{icon}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <span className="visually-hidden" id="position-unavailable">
-                    {t('layers.unavailable')}
-                  </span>
-                  <span className="visually-hidden" id="position-no-neighbor">
-                    {t('layers.noNeighbor')}
-                  </span>
-                </section>
-              )}
-              <span className="visually-hidden" aria-live="polite">
-                {moveAnnouncement}
-              </span>
-              <span className="visually-hidden" aria-live="polite">
-                {editAnnounced ? t('editNameAnnounce') : ''}
-              </span>
-              <Relations tree={tree} person={selectedPerson} />
-              <h3>{t('addRelative')}</h3>
-              <div className="relative-actions">
-                {relationButtons.map(({ kind, label }) => (
-                  <button
-                    className="button button--ghost"
-                    type="button"
-                    key={kind}
-                    disabled={kind === 'parent' && selectedHasTwoParents}
-                    aria-describedby={
-                      kind === 'parent' && selectedHasTwoParents
-                        ? 'relative-parent-limit'
-                        : undefined
-                    }
-                    onClick={() => openRelativeForm(kind)}
-                  >
-                    {t(label)}
-                  </button>
-                ))}
-              </div>
-              {selectedHasTwoParents && (
-                <span
-                  className="relative-action-hint"
-                  id="relative-parent-limit"
-                >
-                  {t('relativeParentDisabled', { name: selectedName })}
-                </span>
-              )}
-              <div className="detail-danger-zone">
-                <button
-                  ref={editButtonRef}
-                  type="button"
-                  className="icon-pill"
-                  aria-label={t('editPersonLabel', { name: selectedName })}
-                  title={t('editPersonLabel', { name: selectedName })}
-                  onClick={() => {
-                    if (!selectedPerson) return
-                    setFirstName(selectedPerson.data.firstName)
-                    setLastName(selectedPerson.data.lastName ?? '')
-                    setFormError('')
-                    setFormErrorField(null)
-                    setEditAnnounced(false)
-                    setEditing(true)
-                  }}
-                >
-                  <span aria-hidden="true">✎</span>
-                </button>
-                <button
-                  ref={deleteButtonRef}
-                  className="icon-pill"
-                  type="button"
-                  aria-label={t('deletePersonButton')}
-                  title={t('deletePersonButton')}
-                  onClick={() => {
-                    if (selectedId) {
-                      setDeletePreview(getDeletePreview(tree, selectedId))
-                    }
-                  }}
-                >
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 24 24"
-                    width="20"
-                    height="20"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M3 6h18M8 6V4h8v2m3 0-.9 14H5.9L5 6m5 4v6m4-6v6" />
-                  </svg>
-                </button>
-              </div>
-            </>
-          )}
+          ) : null}
         </aside>
       )}
       {selectedPerson && deletePreview && (
@@ -1273,12 +1169,29 @@ export default function TreeView({
           }}
           onCancel={() => {
             setDeletePreview(null)
-            window.requestAnimationFrame(() => deleteButtonRef.current?.focus())
+            window.requestAnimationFrame(() =>
+              focusPersonControl(selectedPerson.id, 'delete'),
+            )
           }}
         />
       )}
     </div>
   )
+}
+
+function focusPersonControl(
+  personId: string,
+  control: 'identity' | 'edit' | 'delete',
+) {
+  const className = {
+    identity: 'person-card__identity',
+    edit: 'person-card__control--edit',
+    delete: 'person-card__control--delete',
+  }[control]
+  document
+    .getElementById(`person-${personId}`)
+    ?.querySelector<HTMLButtonElement>(`.${className}`)
+    ?.focus()
 }
 
 function PersonCard({
@@ -1289,6 +1202,7 @@ function PersonCard({
   held,
   dragging,
   dragConnected,
+  controls,
   onSelect,
   onMoveDirection,
 }: {
@@ -1299,6 +1213,7 @@ function PersonCard({
   held: boolean
   dragging: boolean
   dragConnected: boolean
+  controls: React.ReactNode
   onSelect: () => void
   onMoveDirection: (
     direction: 'up' | 'down' | 'left' | 'right',
@@ -1310,67 +1225,43 @@ function PersonCard({
     `${person.data.firstName.charAt(0)}${(person.data.lastName ?? '').charAt(0)}`.toLocaleUpperCase()
   if (!point) return null
   return (
-    <button
+    <div
       id={`person-${person.id}`}
-      type="button"
       className={`person-card${selected ? ' person-card--selected' : ''}${held ? ' person-card--held' : ''}${dragging ? ' person-card--dragging' : ''}${dragConnected ? ' person-card--drag-connected' : ''}`}
       style={{ left: point.x, top: point.y, width }}
+      role="group"
       aria-label={name}
-      aria-pressed={selected}
       onClick={onSelect}
-      onKeyDown={(event) => {
-        if (!event.altKey) return
-        const direction = {
-          ArrowUp: 'up',
-          ArrowDown: 'down',
-          ArrowLeft: 'left',
-          ArrowRight: 'right',
-        }[event.key]
-        if (!direction) return
-        event.preventDefault()
-        onMoveDirection(
-          direction as 'up' | 'down' | 'left' | 'right',
-          person.id,
-        )
-      }}
     >
-      <span className="person-card__avatar" aria-hidden="true">
-        {initials}
-      </span>
-      <span className="person-card__name" title={name}>
-        {name}
-      </span>
-    </button>
-  )
-}
-
-function Relations({ tree, person }: { tree: FamilyTree; person: PersonNode }) {
-  const { t } = useTranslation()
-  const relations = {
-    parents: getParentsOf(tree, person.id),
-    children: getChildrenOf(tree, person.id),
-    siblings: getSiblingsOf(tree, person.id),
-    partners: getPartnersOf(tree, person.id),
-  }
-  return (
-    <div className="relations">
-      {relationGroups.map(({ type, label }) => {
-        const names = relations[type]
-          .map((id) => tree.nodes.find((node) => node.id === id))
-          .filter((node): node is PersonNode => Boolean(node))
-          .map(getDisplayName)
-        if (!names.length) return null
-        return (
-          <section className="relations__group" key={type}>
-            <h3>{t(label)}</h3>
-            <ul>
-              {names.map((name, index) => (
-                <li key={`${name}-${index}`}>{name}</li>
-              ))}
-            </ul>
-          </section>
-        )
-      })}
+      <button
+        type="button"
+        className="person-card__identity"
+        aria-label={name}
+        aria-pressed={selected}
+        onKeyDown={(event) => {
+          if (!event.altKey) return
+          const direction = {
+            ArrowUp: 'up',
+            ArrowDown: 'down',
+            ArrowLeft: 'left',
+            ArrowRight: 'right',
+          }[event.key]
+          if (!direction) return
+          event.preventDefault()
+          onMoveDirection(
+            direction as 'up' | 'down' | 'left' | 'right',
+            person.id,
+          )
+        }}
+      >
+        <span className="person-card__avatar" aria-hidden="true">
+          {initials}
+        </span>
+        <span className="person-card__name" title={name}>
+          {name}
+        </span>
+      </button>
+      {controls}
     </div>
   )
 }

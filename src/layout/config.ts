@@ -1,5 +1,5 @@
 export const LAYOUT_SPACING = {
-  cardHeight: 88,
+  cardHeight: 136,
   partnerGap: 32,
   siblingGap: 24,
   blockGap: 64,
