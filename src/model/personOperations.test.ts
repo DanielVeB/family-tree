@@ -14,6 +14,7 @@ import deleteParentFixture from './fixtures/delete-parent.json'
 import deleteSplitFixture from './fixtures/delete-split-tree.json'
 import { parseTreeFile } from '../io/importTree'
 import { serializeTree } from '../io/exportTree'
+import oldTreeFile from '../io/fixtures/valid-tree.json?raw'
 
 function makeTree(
   people: string[],
@@ -97,6 +98,60 @@ describe('person editing', () => {
       'Fictional field to verify forward compatibility',
     )
     expect(result.tree.nodes[0]!.customNodeField).toBe('preserved')
+  })
+
+  it('saves optional details and removes cleared values while preserving unknown data', () => {
+    const tree = TreeSchema.parse({
+      version: 1,
+      nodes: [
+        {
+          id: 'anna',
+          data: {
+            firstName: 'Anna',
+            lastName: 'Testowa',
+            note: 'preserve',
+            dateOfBirth: '1948',
+            dateOfDeath: '2019',
+          },
+          metaData: { layer: 0, order: 0 },
+        },
+      ],
+      edges: [],
+    })
+    const updated = updatePerson(tree, 'anna', {
+      firstName: 'Anna',
+      lastName: 'Testowa',
+      gender: 'female',
+      dateOfBirth: '1948-03',
+    })
+    expect(updated.nodes[0]!.data).toEqual({
+      firstName: 'Anna',
+      lastName: 'Testowa',
+      gender: 'female',
+      dateOfBirth: '1948-03',
+      note: 'preserve',
+    })
+    expect(Object.keys(updated.nodes[0]!.data)).toEqual([
+      'firstName',
+      'lastName',
+      'gender',
+      'dateOfBirth',
+      'note',
+    ])
+    const roundTrip = parseTreeFile(serializeTree(updated))
+    expect(roundTrip.ok).toBe(true)
+    if (!roundTrip.ok) return
+    expect(roundTrip.tree.nodes[0]!.data).toEqual(updated.nodes[0]!.data)
+  })
+
+  it('does not add optional fields when importing and exporting an older tree', () => {
+    const parsed = parseTreeFile(oldTreeFile)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(
+      parsed.tree.nodes.every((person) => !('gender' in person.data)),
+    ).toBe(true)
+    expect(serializeTree(parsed.tree)).toBe(oldTreeFile)
   })
 })
 

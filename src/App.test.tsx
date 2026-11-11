@@ -58,7 +58,9 @@ describe('start tree and add a relative', () => {
       name: 'Jan Przykładowy',
     })
     expect(addedPerson).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Jan Przykładowy' })).toBeNull()
+    expect(
+      screen.queryByRole('heading', { name: 'Jan Przykładowy' }),
+    ).toBeNull()
     const janCard = addedPerson.closest('.person-card')
     expect(janCard).toHaveAttribute('aria-label', 'Jan Przykładowy')
     expect(
@@ -112,6 +114,219 @@ describe('start tree and add a relative', () => {
       )
     },
   )
+
+  it('saves suggested gender and a birth year, then exports both optional fields', async () => {
+    const user = userEvent.setup()
+    const createObjectURL = vi.fn((blob: Blob) => {
+      expect(blob).toBeInstanceOf(Blob)
+      return 'blob:person-details'
+    })
+    vi.stubGlobal('URL', {
+      createObjectURL,
+      revokeObjectURL: vi.fn(),
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anchor')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(await screen.findByRole('button', { name: 'Anchor' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+
+    await user.type(screen.getByLabelText('First name'), 'Kuba')
+    expect(screen.getByRole('radio', { name: 'Male' })).toBeChecked()
+    expect(
+      screen.getByText('Chosen from the first name. You can change it.'),
+    ).toBeInTheDocument()
+    await user.type(document.getElementById('person-date-birth-year')!, '1948')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('b. 1948')).toBeInTheDocument()
+
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+    await screen.findByRole('dialog', { name: 'Name your file' })
+    await user.click(screen.getByRole('button', { name: 'Export' }))
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledOnce())
+    const exported = createObjectURL.mock.calls[0]![0] as Blob
+    const tree = JSON.parse(await exported.text()) as {
+      nodes: Array<{ data: Record<string, unknown> }>
+    }
+    const kuba = tree.nodes.find(({ data }) => data.firstName === 'Kuba')!.data
+    expect(kuba).toMatchObject({
+      gender: 'male',
+      dateOfBirth: '1948',
+    })
+  })
+
+  it('updates automatic gender while typing and preserves a manual choice', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anchor')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(await screen.findByRole('button', { name: 'Anchor' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+
+    const firstName = screen.getByLabelText('First name')
+    await user.type(firstName, 'Anna')
+    expect(screen.getByRole('radio', { name: 'Female' })).toBeChecked()
+    await user.clear(firstName)
+    await user.type(firstName, 'Karmen')
+    expect(screen.getByRole('radio', { name: 'Female' })).toBeChecked()
+    expect(
+      screen.getByText('Chosen from the first name. You can change it.'),
+    ).toBeInTheDocument()
+    await user.clear(firstName)
+    await user.type(firstName, 'Jan')
+    expect(screen.getByRole('radio', { name: 'Male' })).toBeChecked()
+
+    await user.click(screen.getByRole('radio', { name: 'Female' }))
+    await user.clear(firstName)
+    await user.type(firstName, 'Ola')
+    expect(screen.getByRole('radio', { name: 'Female' })).toBeChecked()
+    expect(
+      screen.queryByText('Chosen from the first name. You can change it.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('suggests gender for an older person without changing data until save', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const oldTree = JSON.stringify({
+      version: 1,
+      nodes: [
+        {
+          id: 'marek',
+          data: { firstName: 'Marek' },
+          metaData: { layer: 0, order: 0 },
+        },
+      ],
+      edges: [],
+    })
+    const input = document.querySelector<HTMLInputElement>(
+      'input[type="file"]',
+    )!
+    fireEvent.change(input, { target: { files: [makeFile(oldTree)] } })
+    await user.click(await screen.findByRole('button', { name: 'Marek' }))
+    await user.click(getPersonActionButton('Marek', 'edit'))
+    expect(screen.getByRole('radio', { name: 'Male' })).toBeChecked()
+    expect(
+      screen.getByText('Chosen from the first name. You can change it.'),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(screen.getByText('Loaded from file')).toBeInTheDocument()
+
+    await user.click(getPersonActionButton('Marek', 'edit'))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.click(getPersonActionButton('Marek', 'edit'))
+    expect(screen.getByRole('radio', { name: 'Male' })).toBeChecked()
+    expect(
+      screen.getByText('Chosen from the first name. You can change it.'),
+    ).toBeInTheDocument()
+  })
+
+  it('imports and re-exports an older file without adding person fields', async () => {
+    const user = userEvent.setup()
+    const createObjectURL = vi.fn((blob: Blob) => {
+      expect(blob).toBeInstanceOf(Blob)
+      return 'blob:old-tree'
+    })
+    vi.stubGlobal('URL', {
+      createObjectURL,
+      revokeObjectURL: vi.fn(),
+    })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    render(<App />)
+    const input =
+      document.querySelector<HTMLInputElement>('input[type="file"]')!
+    fireEvent.change(input, {
+      target: { files: [makeFile(validTreeFile, async () => validTreeFile)] },
+    })
+    await screen.findByRole('button', { name: 'Łucja Żółć' })
+    await user.click(
+      screen.getByRole('button', { name: 'Export tree as a file' }),
+    )
+    await screen.findByRole('dialog', { name: 'Name your file' })
+    await user.click(screen.getByRole('button', { name: 'Export' }))
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalledOnce())
+    const exported = createObjectURL.mock.calls[0]![0] as Blob
+    expect(await exported.text()).toBe(validTreeFile)
+  })
+
+  it('keeps a manual gender and restores optional details with edit Undo', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    const tree = JSON.stringify({
+      version: 1,
+      nodes: [
+        {
+          id: 'jan',
+          data: {
+            firstName: 'Jan',
+            gender: 'female',
+            dateOfBirth: '1948',
+          },
+          metaData: { layer: 0, order: 0 },
+        },
+      ],
+      edges: [],
+    })
+    const input =
+      document.querySelector<HTMLInputElement>('input[type="file"]')!
+    fireEvent.change(input, { target: { files: [makeFile(tree)] } })
+    const jan = await screen.findByRole('button', { name: 'Jan' })
+    await user.click(jan)
+    await user.click(getPersonActionButton('Jan', 'edit'))
+    expect(screen.getByRole('radio', { name: 'Female' })).toBeChecked()
+    expect(
+      screen.queryByText('Chosen from the first name. You can change it.'),
+    ).not.toBeInTheDocument()
+    await user.clear(screen.getByLabelText('First name'))
+    await user.type(screen.getByLabelText('First name'), 'Kuba')
+    expect(screen.getByRole('radio', { name: 'Female' })).toBeChecked()
+    await user.clear(document.getElementById('person-date-birth-year')!)
+    await user.type(document.getElementById('person-date-birth-year')!, '1949')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(
+      await screen.findByRole('button', { name: 'Kuba' }),
+    ).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(await screen.findByText('Person edit undone')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Jan' })).toBeInTheDocument()
+    expect(screen.getByText('b. 1948')).toBeInTheDocument()
+
+    await user.click(getPersonActionButton('Jan', 'edit'))
+    expect(screen.getByLabelText('First name')).toHaveValue('Jan')
+    expect(document.getElementById('person-date-birth-year')).toHaveValue(
+      '1948',
+    )
+    expect(screen.getByRole('radio', { name: 'Female' })).toBeChecked()
+  })
+
+  it('blocks saving an impossible date and links the message to date inputs', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anchor')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(await screen.findByRole('button', { name: 'Anchor' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+    await user.type(screen.getByLabelText('First name'), 'Kuba')
+    await user.type(document.getElementById('person-date-birth-day')!, '31')
+    await user.type(document.getElementById('person-date-birth-month')!, '02')
+    await user.type(document.getElementById('person-date-birth-year')!, '2020')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(screen.getByText('Enter a valid date.')).toBeInTheDocument()
+    expect(document.getElementById('person-date-birth-day')).toHaveAttribute(
+      'aria-describedby',
+      'person-date-birth-error',
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Kuba' }),
+    ).not.toBeInTheDocument()
+  })
 
   it('requires a first name before creating the first person', async () => {
     const user = userEvent.setup()
@@ -324,7 +539,9 @@ describe('start tree and add a relative', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await user.click(screen.getByRole('button', { name: 'Anna' }))
-    await user.click(screen.getByRole('button', { name: 'Add partner on the right' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Add partner on the right' }),
+    )
     const miaAsPartnerChild = screen.getByRole('checkbox', {
       name: 'Mia is also a child of the new partner',
     })
@@ -375,7 +592,9 @@ describe('start tree and add a relative', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await user.click(screen.getByRole('button', { name: 'Anna' }))
-    await user.click(screen.getByRole('button', { name: 'Add partner on the right' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Add partner on the right' }),
+    )
     expect(
       screen.getByRole('checkbox', {
         name: /Mia is also a child of the new partner/,
@@ -390,7 +609,12 @@ describe('start tree and add a relative', () => {
 
     await user.click(screen.getByRole('button', { name: 'Anna' }))
     await user.click(screen.getByRole('button', { name: 'Add child' }))
-    const otherParentRadios = screen.getAllByRole('radio')
+    const otherParentGroup = screen.getByRole('group', {
+      name: 'Who is the other parent?',
+    })
+    const otherParentRadios = Array.from(
+      otherParentGroup.querySelectorAll('input[type="radio"]'),
+    )
     expect(otherParentRadios).toHaveLength(3)
     expect(
       otherParentRadios.every((radio) => !(radio as HTMLInputElement).checked),
@@ -400,7 +624,7 @@ describe('start tree and add a relative', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Choose the other parent, or "No other parent"',
     )
-    expect(screen.getAllByRole('radio')[0]).toHaveFocus()
+    expect(otherParentRadios[0]).toHaveFocus()
     expect(screen.queryByRole('button', { name: 'Zosia' })).toBeNull()
     await user.click(screen.getByRole('radio', { name: 'No other parent' }))
     await user.click(screen.getByRole('button', { name: 'Save' }))
@@ -709,7 +933,7 @@ describe('edit and delete people', () => {
     await i18n.changeLanguage('en')
   })
 
-  it('edits names with validation, preserves focus, and leaves no-op edits clean', async () => {
+  it('edits names with validation, preserves focus, and saves inferred gender', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
@@ -723,16 +947,17 @@ describe('edit and delete people', () => {
     await user.click(screen.getByRole('button', { name: 'Anna Testowa' }))
     expect(screen.getByText('Not exported yet')).toBeInTheDocument()
 
-    expect(
-      getPersonActionButton('Anna Testowa', 'edit'),
-    ).toHaveAttribute('title', 'Edit')
+    expect(getPersonActionButton('Anna Testowa', 'edit')).toHaveAttribute(
+      'title',
+      'Edit',
+    )
     await user.click(getPersonActionButton('Anna Testowa', 'edit'))
     const firstName = screen.getByLabelText('First name')
     expect(firstName).toHaveFocus()
     await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(screen.queryByLabelText('First name')).toBeNull()
     expect(screen.getByRole('button', { name: 'Anna Testowa' })).toBeVisible()
-    expect(screen.getByText('Not exported yet')).toBeInTheDocument()
+    expect(screen.getByText('Changes not exported')).toBeInTheDocument()
 
     await user.click(getPersonActionButton('Anna Testowa', 'edit'))
     await user.clear(screen.getByLabelText('First name'))
@@ -754,9 +979,7 @@ describe('edit and delete people', () => {
     expect(
       await screen.findByRole('button', { name: 'Łucja Żółć' }),
     ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('heading', { name: 'Łucja Żółć' }),
-    ).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Łucja Żółć' })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Mia' }))
     expect(screen.getAllByText('Łucja Żółć')).toHaveLength(1)
     expect(
@@ -797,9 +1020,10 @@ describe('edit and delete people', () => {
     await screen.findByRole('dialog', { name: 'Name your file' })
     await user.click(screen.getByRole('button', { name: 'Export' }))
     await user.click(getPersonActionButton('Anna', 'delete'))
-    expect(
-      getPersonActionButton('Anna', 'delete'),
-    ).toHaveAttribute('title', 'Delete')
+    expect(getPersonActionButton('Anna', 'delete')).toHaveAttribute(
+      'title',
+      'Delete',
+    )
     const dialog = screen.getByRole('alertdialog', { name: 'Delete Anna?' })
     expect(dialog).toHaveTextContent(
       '2 relationships will be removed along with this person.',
@@ -811,9 +1035,7 @@ describe('edit and delete people', () => {
     await user.keyboard('{Escape}')
     expect(screen.getByRole('button', { name: 'Anna' })).toBeInTheDocument()
     await waitFor(() =>
-      expect(
-        getPersonActionButton('Anna', 'delete'),
-      ).toHaveFocus(),
+      expect(getPersonActionButton('Anna', 'delete')).toHaveFocus(),
     )
 
     await user.click(getPersonActionButton('Anna', 'delete'))
@@ -995,9 +1217,13 @@ describe('edit and delete people', () => {
       document.querySelector<HTMLInputElement>('input[type="file"]')!
     fireEvent.change(input, { target: { files: [makeFile(tree)] } })
     await user.click(await screen.findByRole('button', { name: 'Person' }))
-    expect(screen.queryByRole('dialog', { name: 'Move Person?' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('dialog', { name: 'Move Person?' }),
+    ).not.toBeInTheDocument()
     await user.click(getPersonActionButton('Person', 'move'))
-    expect(screen.getByRole('button', { name: 'Move right one place' })).toBeVisible()
+    expect(
+      screen.getByRole('button', { name: 'Move right one place' }),
+    ).toBeVisible()
     fireEvent.pointerDown(document.body)
     expect(
       screen.queryByRole('button', { name: 'Move right one place' }),

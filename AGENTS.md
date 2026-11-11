@@ -58,8 +58,18 @@ The in-memory tree already has the JSON shape expected by future import/export:
 ```ts
 interface PersonNode {
   id: string;
-  data: { firstName: string; lastName?: string; [key: string]: unknown };
+  data: PersonData;
   metaData: { layer: number; order: number; [key: string]: unknown };
+}
+
+type PartialDate = string; // YYYY, YYYY-MM, or YYYY-MM-DD
+interface PersonData {
+  firstName: string;
+  lastName?: string;
+  gender?: "female" | "male";
+  dateOfBirth?: PartialDate;
+  dateOfDeath?: PartialDate;
+  [key: string]: unknown;
 }
 
 interface TreeEdge {
@@ -85,6 +95,7 @@ interface FamilyTree {
 Rules:
 - IDs are generated in the browser with `crypto.randomUUID()`, never derived from names.
 - First names are required, trimmed, and 1–100 characters. Last names are optional, trimmed, and 0–100 characters.
+- Gender, date of birth, and date of death are optional. Partial dates use `YYYY`, `YYYY-MM`, or `YYYY-MM-DD` with valid calendar values. Empty values are omitted, and import never fills missing fields.
 - Edge endpoints must exist, self-edges and duplicate edges are invalid, and child edges must not form ancestry cycles.
 - Relation types are declared in one place with the schema in `src/model/`; extend this definition alongside its UI label.
 - Zod schemas preserve unknown node, `data`, edge, and top-level fields for forward compatibility.
@@ -113,7 +124,7 @@ Ask only when there is something to ask, and pre-select the likely answer. Keep 
 - The tree may contain multiple disconnected parts or be empty. A part is a connected component across all relationship types; layout keeps each part intact, orders parts by their earliest-created person, aligns their top rows, and leaves at least 96px between parts.
 
 ### Editing and destructive actions
-- `updatePerson` and `deletePerson` are pure model operations. Editing changes only trimmed first and last names and preserves unknown data. Deleting a person removes every incident edge and never changes links between other people.
+- `updatePerson` and `deletePerson` are pure model operations. Editing changes trimmed names and saved optional person details while preserving unknown data; cleared detail fields are omitted. Deleting a person removes every incident edge and never changes links between other people.
 - Confirm destructive actions with a clear summary of consequences, choose a safe default when possible, and offer a single-step Undo for deletion. Undo restores the exact tree and change status, and expires when the toast closes or another tree change occurs.
 
 ## 6. Core Features (v1 scope)
@@ -125,12 +136,13 @@ In scope:
 4. **Select** a person to open the detail view (bottom sheet on mobile, side panel on desktop).
 5. **Add** a person (as parent, partner, child, or sibling of the selected person) and a standalone first person for an empty tree.
 6. **Edit** a person's fields.
-7. **Delete** a person (with confirmation as described above).
-8. **Undo/redo** for edits.
-9. **Autosave** to browser storage so a refresh does not lose work, plus a "last exported" hint and a warning before leaving when the current tree has unexported changes.
-10. **Start empty or load sample:** a "Try with sample data" action that loads fake data bundled with the app.
-11. **PWA:** installable and works offline after the first load.
-12. **Language switcher:** English and Polish, with automatic first-visit detection and a persistent manual choice (see section 7a).
+7. **Person details:** gender chosen from the first name with configurable exceptions, plus optional dates of birth and death.
+8. **Delete** a person (with confirmation as described above).
+9. **Undo/redo** for edits.
+10. **Autosave** to browser storage so a refresh does not lose work, plus a "last exported" hint and a warning before leaving when the current tree has unexported changes.
+11. **Start empty or load sample:** a "Try with sample data" action that loads fake data bundled with the app.
+12. **PWA:** installable and works offline after the first load.
+13. **Language switcher:** English and Polish, with automatic first-visit detection and a persistent manual choice (see section 7a).
 
 Out of scope for v1 (do not build unless asked): accounts, cloud sync, collaboration, photo upload, GEDCOM import/export, printing/PDF, search across huge trees, languages other than English and Polish, dark mode.
 
@@ -210,6 +222,8 @@ Out of scope for v1 (do not build unless asked): accounts, cloud sync, collabora
 - Child buses sit in the gap directly above their row even when parent and child layers are not adjacent. Cross-layer marriage and sibling edges use orthogonal elbows.
 - Keep spacing in `src/layout/config.ts`: partner gap 32px, sibling gap 24px, block gap at least 64px, row gap at least 96px, and lane spacing 8px. Increase row gaps when routes need more lanes.
 - Geometric invariants: cards do not overlap; lines attach only at their related card edges; unrelated routes do not overlap or run parallel closer than 8px; every relationship is represented once; the same tree produces the same layout.
+
+Person cards show a one-line years caption in the design-system caption style when birth or death years are known. The shared person form includes gender and optional partial-date groups. Gender exceptions are configured in `src/config/gender-names.json`, using the `maleNamesEndingInA` and `femaleNamesNotEndingInA` lists.
 
 Principles:
 - Keep `model/` pure TypeScript with **no React imports**. All add/delete/edit logic lives here and is unit-tested.

@@ -239,6 +239,62 @@ describe('exportWithFileSystemAccess', () => {
       new TextEncoder().encode(first),
     )
   })
+
+  it('round-trips optional details in key order with unknown data preserved', () => {
+    const detailedTree = {
+      version: 1 as const,
+      nodes: [
+        {
+          id: 'person-anna',
+          data: {
+            futureField: 'kept',
+            dateOfBirth: '1948-03-07',
+            gender: 'female' as const,
+            firstName: 'Anna',
+            lastName: 'Testowa',
+          },
+          metaData: { layer: 0, order: 0 },
+        },
+        {
+          id: 'person-jan',
+          data: {
+            firstName: 'Jan',
+            dateOfDeath: '2019',
+            custom: { value: 1 },
+          },
+          metaData: { layer: 0, order: 1 },
+        },
+      ],
+      edges: [
+        { from: 'person-anna', to: 'person-jan', type: 'marriage' as const },
+      ],
+    }
+    const first = serializeTree(detailedTree)
+    const exportedData = (
+      JSON.parse(first) as {
+        nodes: Array<{ data: Record<string, unknown> }>
+      }
+    ).nodes[0]!.data
+    expect(Object.keys(exportedData)).toEqual([
+      'firstName',
+      'lastName',
+      'gender',
+      'dateOfBirth',
+      'futureField',
+    ])
+    expect(first.indexOf('"gender"')).toBeLessThan(
+      first.indexOf('"dateOfBirth"'),
+    )
+    expect(first.indexOf('"dateOfBirth"')).toBeLessThan(
+      first.indexOf('"futureField"'),
+    )
+    const parsed = parseTreeFile(first)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(serializeTree(parsed.tree)).toBe(first)
+    expect(parsed.tree.nodes[0]!.data.futureField).toBe('kept')
+    expect(parsed.tree.nodes[1]!.data.custom).toEqual({ value: 1 })
+  })
 })
 
 describe('serializeTree', () => {

@@ -14,6 +14,7 @@ import {
   type RelativeKind,
 } from './tree'
 import { serializeTree } from '../io/exportTree'
+import { parseTreeFile } from '../io/importTree'
 
 function randomGenerator(seed: number) {
   let value = seed >>> 0
@@ -78,11 +79,20 @@ function runSequence(seed: number): string {
         if (questions.some(({ kind }) => kind === 'choice')) {
           answers.choice = '__none__'
         }
+        const detailFields =
+          random() < 0.5
+            ? {
+                gender:
+                  random() < 0.5 ? ('female' as const) : ('male' as const),
+                dateOfBirth: random() < 0.5 ? '1948-03-07' : undefined,
+                dateOfDeath: random() < 0.5 ? '2019' : undefined,
+              }
+            : {}
         tree = addRelative(
           tree,
           selected,
           relation,
-          { firstName: `Fictional ${nextName++}` },
+          { firstName: `Fictional ${nextName++}`, ...detailFields },
           answers,
         )
       }
@@ -96,6 +106,9 @@ function runSequence(seed: number): string {
       tree = updatePerson(tree, selected, {
         firstName: `Edited ${nextName++}`,
         lastName: 'Example',
+        gender: random() < 0.5 ? 'female' : 'male',
+        dateOfBirth: random() < 0.5 ? '1980' : undefined,
+        dateOfDeath: random() < 0.5 ? '2020-01' : undefined,
       })
       undoTree = null
     } else if (undoTree) {
@@ -157,7 +170,13 @@ function runSequence(seed: number): string {
       }
     }
   }
-  return serializeTree(tree)
+  const serialized = serializeTree(tree)
+  const parsed = parseTreeFile(serialized)
+  const roundTrip = parsed.ok ? serializeTree(parsed.tree) : ''
+  if (!parsed.ok || roundTrip !== serialized) {
+    throw new Error(`seed ${seed}: tree did not round-trip byte-identically`)
+  }
+  return serialized
 }
 
 describe('randomized tree operations', () => {

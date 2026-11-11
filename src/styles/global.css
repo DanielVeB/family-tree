@@ -450,6 +450,13 @@ h1 {
   cursor: pointer;
 }
 
+.person-card__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .person-card__identity:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
@@ -564,10 +571,21 @@ h1 {
 
 .person-card__name {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
   font-size: 16px;
   font-weight: 600;
   line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-card__dates {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvas-controls {
@@ -941,6 +959,110 @@ h1 {
 .field input:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 1px;
+}
+
+.field input[aria-invalid='true'],
+.person-date__field input[aria-invalid='true'] {
+  border-color: var(--border-strong);
+}
+
+.person-gender,
+.person-date {
+  min-width: 0;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+
+.person-gender legend,
+.person-date legend {
+  margin-bottom: 6px;
+  color: var(--oak);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.person-gender__options {
+  display: flex;
+  gap: 8px;
+}
+
+.person-gender__option {
+  display: flex;
+  min-height: 44px;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--oak);
+  cursor: pointer;
+}
+
+.person-gender__option input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin: 0;
+  accent-color: var(--oak);
+}
+
+.person-gender__option input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.person-date__inputs {
+  display: flex;
+  gap: 8px;
+}
+
+.person-date__field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--oak);
+  font-size: 14px;
+}
+
+.person-date__field--day,
+.person-date__field--month {
+  flex: 1 1 25%;
+}
+
+.person-date__field--year {
+  flex: 1.6 1 40%;
+}
+
+.person-date__field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--cream);
+  color: var(--oak);
+  font: inherit;
+  font-size: 16px;
+}
+
+.person-date__field input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+.person-field__hint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.person-date .field__error {
+  margin: 4px 0 0;
 }
 
 .field__error {

@@ -8,6 +8,8 @@ A private, client-side family tree app. Family data stays in your browser and is
 
 Exported files contain personal data. Store them securely and share them only with people you trust. See the [JSON file format guide](docs/file-format.md) for the file structure and relationship rules.
 
+People can optionally have a gender (`female` or `male`), a birth date, and a death date. Dates use `YYYY`, `YYYY-MM`, or `YYYY-MM-DD`; older files without these fields continue to work unchanged. The app suggests gender from a person's first name. To adjust the name exceptions, add entries to `maleNamesEndingInA` or `femaleNamesNotEndingInA` in [`src/config/gender-names.json`](src/config/gender-names.json).
+
 Each person stores a `metaData` object with their `layer` and `order`. Layers
 start at 0 for the top row; order starts at 0 from the left within each row.
 Both values are nonnegative integers. Parents are always above children;

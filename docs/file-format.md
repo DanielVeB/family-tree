@@ -22,7 +22,12 @@ or confirm the export target.
 - `version` is the format version. The current version is `1`.
 - `nodes` is an array of people in creation order. Each node has a unique `id`
   and a `data` object containing a required `firstName` and an optional
-  `lastName`, plus required `metaData.layer` and `metaData.order` integers.
+  `lastName`, `gender`, `dateOfBirth`, and `dateOfDeath`, plus required
+  `metaData.layer` and `metaData.order` integers. Gender is either `female` or
+  `male`. Dates are optional partial dates in `YYYY`, `YYYY-MM`, or
+  `YYYY-MM-DD` form, with valid calendar values and years from 1000 onward.
+  Empty values are omitted. Files exported before these fields were added
+  remain valid and are not changed just by importing and exporting them.
   Unknown fields in `data` and `metaData` are retained.
 - `edges` is an array of relationships in creation order. `from` and `to`
   contain node IDs, and `type` is one of the relationship types below.
@@ -60,10 +65,12 @@ different relationship.
 ## Validation
 
 Names are trimmed. A first name is required and may contain 1–100 characters;
-a last name is optional and may contain up to 100 characters. Node IDs must be
-non-empty and unique. Every edge must refer to existing nodes, may not connect
-a node to itself, and must not duplicate another edge of the same type.
-`child` edges must not form a cycle.
+a last name is optional and may contain up to 100 characters. Gender and both
+dates are optional and are only added when a person is saved in a form; import
+does not infer or fill missing values. Node IDs must be non-empty and unique.
+Every edge must refer to existing nodes, may not connect a node to itself, and
+must not duplicate another edge of the same type. `child` edges must not form a
+cycle.
 
 ## Fictional example
 
@@ -75,7 +82,10 @@ a node to itself, and must not duplicate another edge of the same type.
       "id": "person-anna",
       "data": {
         "firstName": "Anna",
-        "lastName": "Testowa"
+        "lastName": "Testowa",
+        "gender": "female",
+        "dateOfBirth": "1948-03-07",
+        "dateOfDeath": "2019"
       },
       "metaData": {
         "layer": 0,

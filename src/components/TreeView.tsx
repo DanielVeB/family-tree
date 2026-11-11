@@ -17,6 +17,16 @@ import {
   type Point,
 } from '../layout/computeLayout'
 import {
+  formatDateYears,
+  buildPartialDate,
+  parsePartialDate,
+  validateDateOrder,
+  validatePartialDate,
+  type DateValidationError,
+  type PartialDateParts,
+} from '../model/dates'
+import { guessGender } from '../model/gender'
+import {
   getDeletePreview,
   getConnectedParts,
   getMoveLevelAvailability,
@@ -34,6 +44,7 @@ import {
   type PersonNode,
   type RelativeKind,
   type MoveRequest,
+  type Gender,
 } from '../model/tree'
 
 interface TreeViewProps {
@@ -64,6 +75,15 @@ interface DragPreview {
   availability: ReturnType<typeof getMoveLevelAvailability>
   partIds: string[]
 }
+
+type PersonDateFields = {
+  birth: PartialDateParts
+  death: PartialDateParts
+}
+
+type DateError =
+  | { group: 'birth' | 'death'; code: DateValidationError }
+  | { group: 'death'; code: 'errorOrder' }
 
 const minZoom = 0.25
 const maxZoom = 2
@@ -127,12 +147,23 @@ export default function TreeView({
   const [drag, setDrag] = useState<DragPreview | null>(null)
   const [heldPersonId, setHeldPersonId] = useState<string | null>(null)
   const [relativeForm, setRelativeForm] = useState<RelativeKind | null>(null)
-  const [relativeSide, setRelativeSide] = useState<'left' | 'right' | undefined>()
+  const [relativeSide, setRelativeSide] = useState<
+    'left' | 'right' | undefined
+  >()
   const [editing, setEditing] = useState(false)
   const [deletePreview, setDeletePreview] = useState<DeletePreview | null>(null)
   const [editAnnounced, setEditAnnounced] = useState(false)
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
+  const [genderMode, setGenderMode] = useState<'automatic' | 'manual'>(
+    'automatic',
+  )
+  const [manualGender, setManualGender] = useState<Gender | undefined>()
+  const [dateFields, setDateFields] = useState<PersonDateFields>({
+    birth: { day: '', month: '', year: '' },
+    death: { day: '', month: '', year: '' },
+  })
+  const [dateError, setDateError] = useState<DateError | null>(null)
   const [formError, setFormError] = useState('')
   const [formErrorField, setFormErrorField] = useState<
     'firstName' | 'lastName' | null
@@ -148,6 +179,8 @@ export default function TreeView({
 
   const selectedPerson = tree.nodes.find((node) => node.id === selectedId)
   const selectedName = selectedPerson ? getDisplayName(selectedPerson) : ''
+  const selectedGender =
+    genderMode === 'automatic' ? guessGender(firstName) : manualGender
   const connectionQuestions = useMemo(
     () =>
       selectedId && relativeForm
@@ -512,6 +545,7 @@ export default function TreeView({
       setFormErrorField('lastName')
       return
     }
+    if (!validatePersonDates()) return
     if (!selectedPerson) {
       setFormError('unknownPerson')
       return
@@ -520,6 +554,7 @@ export default function TreeView({
       const changed = onUpdatePerson(selectedPerson.id, {
         firstName: trimmedFirstName,
         lastName: lastName.trim(),
+        ...getPersonDetails(),
       })
       setEditing(false)
       setFormError('')
@@ -564,6 +599,7 @@ export default function TreeView({
       connectionChoiceRef.current?.focus()
       return
     }
+    if (!validatePersonDates()) return
     try {
       onAddRelative(
         selectedId,
@@ -571,6 +607,7 @@ export default function TreeView({
         {
           firstName: trimmedFirstName,
           lastName: lastName.trim(),
+          ...getPersonDetails(),
         },
         connectionAnswers,
         Object.fromEntries(
@@ -611,10 +648,62 @@ export default function TreeView({
     setFormErrorField(null)
     setFirstName('')
     setLastName('')
+    setGenderMode('automatic')
+    setManualGender(undefined)
+    setDateFields(emptyPersonDateFields())
+    setDateError(null)
     setEditing(false)
     setEditAnnounced(false)
     setRelativeSide(side)
     setRelativeForm(kind)
+  }
+
+  function getPersonDetails(): Pick<
+    PersonName,
+    'gender' | 'dateOfBirth' | 'dateOfDeath'
+  > {
+    const gender =
+      genderMode === 'automatic' ? guessGender(firstName) : manualGender
+    const dateOfBirth = buildPartialDate(dateFields.birth)
+    const dateOfDeath = buildPartialDate(dateFields.death)
+    return {
+      ...(gender ? { gender } : {}),
+      ...(dateOfBirth ? { dateOfBirth } : {}),
+      ...(dateOfDeath ? { dateOfDeath } : {}),
+    }
+  }
+
+  function validatePersonDates(): boolean {
+    for (const group of ['birth', 'death'] as const) {
+      const code = validatePartialDate(dateFields[group], new Date())
+      if (code) {
+        setDateError({ group, code })
+        return false
+      }
+    }
+    if (!validateDateOrder(dateFields.birth, dateFields.death)) {
+      setDateError({ group: 'death', code: 'errorOrder' })
+      return false
+    }
+    setDateError(null)
+    return true
+  }
+
+  function validateDateField(group: 'birth' | 'death') {
+    const code = validatePartialDate(dateFields[group], new Date())
+    if (code) {
+      setDateError({ group, code })
+      return
+    }
+    if (
+      validatePartialDate(dateFields.birth, new Date()) === undefined &&
+      validatePartialDate(dateFields.death, new Date()) === undefined &&
+      !validateDateOrder(dateFields.birth, dateFields.death)
+    ) {
+      setDateError({ group: 'death', code: 'errorOrder' })
+      return
+    }
+    setDateError((current) => (current?.group === group ? null : current))
   }
 
   const pointerPosition = (event: ReactPointerEvent<HTMLDivElement>) => ({
@@ -961,6 +1050,19 @@ export default function TreeView({
                       setRelativeForm(null)
                       setFirstName(person.data.firstName)
                       setLastName(person.data.lastName ?? '')
+                      setGenderMode(
+                        person.data.gender &&
+                          person.data.gender !==
+                            guessGender(person.data.firstName)
+                          ? 'manual'
+                          : 'automatic',
+                      )
+                      setManualGender(person.data.gender)
+                      setDateFields({
+                        birth: parsePartialDate(person.data.dateOfBirth),
+                        death: parsePartialDate(person.data.dateOfDeath),
+                      })
+                      setDateError(null)
                       setFormError('')
                       setFormErrorField(null)
                       setEditAnnounced(false)
@@ -1103,6 +1205,26 @@ export default function TreeView({
               name={selectedName}
               firstName={firstName}
               lastName={lastName}
+              gender={selectedGender}
+              genderMode={genderMode}
+              dateFields={dateFields}
+              dateError={dateError}
+              onGender={(gender) => {
+                setGenderMode('manual')
+                setManualGender(gender)
+              }}
+              onDateField={(group, field, value) => {
+                setDateFields((current) => ({
+                  ...current,
+                  [group]: { ...current[group], [field]: value },
+                }))
+                setDateError((current) =>
+                  current?.group === group || current?.code === 'errorOrder'
+                    ? null
+                    : current,
+                )
+              }}
+              onDateBlur={validateDateField}
               error={formError}
               errorField={formErrorField}
               tree={tree}
@@ -1143,6 +1265,26 @@ export default function TreeView({
             <EditPersonForm
               firstName={firstName}
               lastName={lastName}
+              gender={selectedGender}
+              genderMode={genderMode}
+              dateFields={dateFields}
+              dateError={dateError}
+              onGender={(gender) => {
+                setGenderMode('manual')
+                setManualGender(gender)
+              }}
+              onDateField={(group, field, value) => {
+                setDateFields((current) => ({
+                  ...current,
+                  [group]: { ...current[group], [field]: value },
+                }))
+                setDateError((current) =>
+                  current?.group === group || current?.code === 'errorOrder'
+                    ? null
+                    : current,
+                )
+              }}
+              onDateBlur={validateDateField}
               error={formError}
               errorField={formErrorField}
               firstNameRef={relativeFirstNameRef}
@@ -1224,7 +1366,15 @@ function PersonCard({
     personId?: string,
   ) => void
 }) {
+  const { t } = useTranslation()
   const name = getDisplayName(person)
+  const datesLine = formatDateYears(
+    person.data.dateOfBirth,
+    person.data.dateOfDeath,
+    (year) => t('person.dates.born', { year }),
+    (year) => t('person.dates.died', { year }),
+    (from, to) => t('person.dates.range', { from, to }),
+  )
   const initials =
     `${person.data.firstName.charAt(0)}${(person.data.lastName ?? '').charAt(0)}`.toLocaleUpperCase()
   if (!point) return null
@@ -1261,8 +1411,15 @@ function PersonCard({
         <span className="person-card__avatar" aria-hidden="true">
           {initials}
         </span>
-        <span className="person-card__name" title={name}>
-          {name}
+        <span className="person-card__copy">
+          <span className="person-card__name" title={name}>
+            {name}
+          </span>
+          {datesLine && (
+            <span className="person-card__dates" title={datesLine}>
+              {datesLine}
+            </span>
+          )}
         </span>
       </button>
       {controls}
@@ -1270,24 +1427,182 @@ function PersonCard({
   )
 }
 
-function EditPersonForm({
-  firstName,
-  lastName,
-  error,
-  errorField,
-  firstNameRef,
-  onFirstName,
-  onLastName,
-  onSubmit,
-  onCancel,
-}: {
+function emptyPersonDateFields(): PersonDateFields {
+  return {
+    birth: { day: '', month: '', year: '' },
+    death: { day: '', month: '', year: '' },
+  }
+}
+
+interface PersonFieldsProps {
   firstName: string
   lastName: string
+  gender: Gender | undefined
+  genderMode: 'automatic' | 'manual'
+  dateFields: PersonDateFields
+  dateError: DateError | null
   error: string
   errorField: 'firstName' | 'lastName' | null
   firstNameRef: React.RefObject<HTMLInputElement | null>
   onFirstName: (value: string) => void
   onLastName: (value: string) => void
+  onGender: (gender: Gender) => void
+  onDateField: (
+    group: 'birth' | 'death',
+    field: keyof PartialDateParts,
+    value: string,
+  ) => void
+  onDateBlur: (group: 'birth' | 'death') => void
+}
+
+function PersonFields({
+  firstName,
+  lastName,
+  gender,
+  genderMode,
+  dateFields,
+  dateError,
+  error,
+  errorField,
+  firstNameRef,
+  onFirstName,
+  onLastName,
+  onGender,
+  onDateField,
+  onDateBlur,
+}: PersonFieldsProps) {
+  const { t } = useTranslation()
+  const dateGroups = [
+    { key: 'birth', label: t('person.birth.label') },
+    { key: 'death', label: t('person.death.label') },
+  ] as const
+  const dateParts = [
+    { key: 'day', label: t('person.date.day'), maxLength: 2 },
+    { key: 'month', label: t('person.date.month'), maxLength: 2 },
+    { key: 'year', label: t('person.date.year'), maxLength: 4 },
+  ] as const
+  return (
+    <>
+      <div className="field">
+        <label htmlFor="person-first-name">{t('firstName')}</label>
+        <input
+          id="person-first-name"
+          ref={firstNameRef}
+          autoComplete="given-name"
+          maxLength={101}
+          value={firstName}
+          aria-invalid={errorField === 'firstName'}
+          aria-describedby={
+            errorField === 'firstName' ? 'person-first-name-error' : undefined
+          }
+          onChange={(event) => onFirstName(event.target.value)}
+        />
+        {error && errorField === 'firstName' && (
+          <span
+            className="field__error"
+            id="person-first-name-error"
+            role="alert"
+          >
+            {error === 'required'
+              ? t('firstNameRequired')
+              : t('nameTooLong', { max: 100 })}
+          </span>
+        )}
+      </div>
+      <div className="field">
+        <label htmlFor="person-last-name">{t('lastName')}</label>
+        <input
+          id="person-last-name"
+          autoComplete="family-name"
+          maxLength={101}
+          value={lastName}
+          aria-invalid={errorField === 'lastName'}
+          aria-describedby={
+            errorField === 'lastName' ? 'person-last-name-error' : undefined
+          }
+          onChange={(event) => onLastName(event.target.value)}
+        />
+        {error && errorField === 'lastName' && (
+          <span
+            className="field__error"
+            id="person-last-name-error"
+            role="alert"
+          >
+            {t('nameTooLong', { max: 100 })}
+          </span>
+        )}
+      </div>
+      <fieldset className="person-gender">
+        <legend>{t('person.gender.label')}</legend>
+        <div className="person-gender__options">
+          {(['female', 'male'] as const).map((value) => (
+            <label className="person-gender__option" key={value}>
+              <input
+                type="radio"
+                name="person-gender"
+                value={value}
+                checked={gender === value}
+                onChange={() => onGender(value)}
+              />
+              {t(`person.gender.${value}`)}
+            </label>
+          ))}
+        </div>
+        {genderMode === 'automatic' && gender && (
+          <p className="person-field__hint">{t('person.gender.auto')}</p>
+        )}
+      </fieldset>
+      {dateGroups.map(({ key, label }) => {
+        const errorForGroup =
+          dateError?.group === key ? dateError.code : undefined
+        const errorId = `person-date-${key}-error`
+        return (
+          <fieldset className="person-date" key={key}>
+            <legend>{label}</legend>
+            <div className="person-date__inputs">
+              {dateParts.map(({ key: part, label: partLabel, maxLength }) => {
+                const id = `person-date-${key}-${part}`
+                return (
+                  <div
+                    className={`person-date__field person-date__field--${part}`}
+                    key={part}
+                  >
+                    <label htmlFor={id}>{partLabel}</label>
+                    <input
+                      id={id}
+                      inputMode="numeric"
+                      maxLength={maxLength}
+                      value={dateFields[key][part]}
+                      aria-invalid={Boolean(errorForGroup)}
+                      aria-describedby={errorForGroup ? errorId : undefined}
+                      onBlur={() => onDateBlur(key)}
+                      onChange={(event) =>
+                        onDateField(key, part, event.target.value)
+                      }
+                    />
+                  </div>
+                )
+              })}
+            </div>
+            {errorForGroup ? (
+              <p className="field__error" id={errorId} role="alert">
+                {t(`person.date.${errorForGroup}`)}
+              </p>
+            ) : (
+              <p className="person-field__hint">{t('person.date.hint')}</p>
+            )}
+          </fieldset>
+        )
+      })}
+    </>
+  )
+}
+
+function EditPersonForm({
+  onSubmit,
+  onCancel,
+  ...fields
+}: PersonFieldsProps & {
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onCancel: () => void
 }) {
@@ -1296,55 +1611,7 @@ function EditPersonForm({
     <>
       <h2 className="detail-panel__form-title">{t('editPersonTitle')}</h2>
       <form className="relative-form" onSubmit={onSubmit} noValidate>
-        <div className="field">
-          <label htmlFor="edit-first-name">{t('firstName')}</label>
-          <input
-            id="edit-first-name"
-            ref={firstNameRef}
-            autoComplete="given-name"
-            maxLength={101}
-            value={firstName}
-            aria-invalid={errorField === 'firstName'}
-            aria-describedby={
-              errorField === 'firstName' ? 'edit-first-name-error' : undefined
-            }
-            onChange={(event) => onFirstName(event.target.value)}
-          />
-          {error && errorField === 'firstName' && (
-            <span
-              className="field__error"
-              id="edit-first-name-error"
-              role="alert"
-            >
-              {error === 'required'
-                ? t('firstNameRequired')
-                : t('nameTooLong', { max: 100 })}
-            </span>
-          )}
-        </div>
-        <div className="field">
-          <label htmlFor="edit-last-name">{t('lastName')}</label>
-          <input
-            id="edit-last-name"
-            autoComplete="family-name"
-            maxLength={101}
-            value={lastName}
-            aria-invalid={errorField === 'lastName'}
-            aria-describedby={
-              errorField === 'lastName' ? 'edit-last-name-error' : undefined
-            }
-            onChange={(event) => onLastName(event.target.value)}
-          />
-          {error && errorField === 'lastName' && (
-            <span
-              className="field__error"
-              id="edit-last-name-error"
-              role="alert"
-            >
-              {t('nameTooLong', { max: 100 })}
-            </span>
-          )}
-        </div>
+        <PersonFields {...fields} />
         <div className="form-actions">
           <button className="button button--primary" type="submit">
             {t('save')}
@@ -1357,7 +1624,7 @@ function EditPersonForm({
             {t('cancel')}
           </button>
         </div>
-        {error && errorField === null && (
+        {fields.error && fields.errorField === null && (
           <p className="field__error" role="alert">
             {t('editSaveError')}
           </p>
@@ -1372,6 +1639,10 @@ function RelativeForm({
   name,
   firstName,
   lastName,
+  gender,
+  genderMode,
+  dateFields,
+  dateError,
   error,
   errorField,
   tree,
@@ -1383,6 +1654,9 @@ function RelativeForm({
   firstNameRef,
   onFirstName,
   onLastName,
+  onGender,
+  onDateField,
+  onDateBlur,
   onSubmit,
   onCancel,
 }: {
@@ -1390,6 +1664,10 @@ function RelativeForm({
   name: string
   firstName: string
   lastName: string
+  gender: Gender | undefined
+  genderMode: 'automatic' | 'manual'
+  dateFields: PersonDateFields
+  dateError: DateError | null
   error: string
   errorField: 'firstName' | 'lastName' | null
   tree: FamilyTree
@@ -1401,6 +1679,9 @@ function RelativeForm({
   firstNameRef: React.RefObject<HTMLInputElement | null>
   onFirstName: (value: string) => void
   onLastName: (value: string) => void
+  onGender: (gender: Gender) => void
+  onDateField: PersonFieldsProps['onDateField']
+  onDateBlur: PersonFieldsProps['onDateBlur']
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onCancel: () => void
 }) {
@@ -1417,57 +1698,22 @@ function RelativeForm({
         {t('addTo', { relation: relationTranslation[relation], name })}
       </h2>
       <form className="relative-form" onSubmit={onSubmit} noValidate>
-        <div className="field">
-          <label htmlFor="relative-first-name">{t('firstName')}</label>
-          <input
-            id="relative-first-name"
-            ref={firstNameRef}
-            autoComplete="given-name"
-            maxLength={101}
-            value={firstName}
-            aria-invalid={errorField === 'firstName'}
-            aria-describedby={
-              errorField === 'firstName'
-                ? 'relative-first-name-error'
-                : undefined
-            }
-            onChange={(event) => onFirstName(event.target.value)}
-          />
-          {error && errorField === 'firstName' && (
-            <span
-              className="field__error"
-              id="relative-first-name-error"
-              role="alert"
-            >
-              {error === 'required'
-                ? t('firstNameRequired')
-                : t('nameTooLong', { max: 100 })}
-            </span>
-          )}
-        </div>
-        <div className="field">
-          <label htmlFor="relative-last-name">{t('lastName')}</label>
-          <input
-            id="relative-last-name"
-            autoComplete="family-name"
-            maxLength={101}
-            value={lastName}
-            aria-invalid={errorField === 'lastName'}
-            aria-describedby={
-              errorField === 'lastName' ? 'relative-last-name-error' : undefined
-            }
-            onChange={(event) => onLastName(event.target.value)}
-          />
-          {error && errorField === 'lastName' && (
-            <span
-              className="field__error"
-              id="relative-last-name-error"
-              role="alert"
-            >
-              {t('nameTooLong', { max: 100 })}
-            </span>
-          )}
-        </div>
+        <PersonFields
+          firstName={firstName}
+          lastName={lastName}
+          gender={gender}
+          genderMode={genderMode}
+          dateFields={dateFields}
+          dateError={dateError}
+          error={error}
+          errorField={errorField}
+          firstNameRef={firstNameRef}
+          onFirstName={onFirstName}
+          onLastName={onLastName}
+          onGender={onGender}
+          onDateField={onDateField}
+          onDateBlur={onDateBlur}
+        />
         <ConnectionQuestions
           groups={questions}
           tree={tree}

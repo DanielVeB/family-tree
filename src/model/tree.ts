@@ -1,13 +1,21 @@
 import { z } from 'zod'
+import { isValidPartialDate } from './dates'
 
 export const RELATION_TYPES = ['child', 'sibling', 'marriage'] as const
 export const RelationTypeSchema = z.enum(RELATION_TYPES)
 export type RelationType = z.infer<typeof RelationTypeSchema>
+export const GenderSchema = z.enum(['female', 'male'])
+export type Gender = z.infer<typeof GenderSchema>
+export const PartialDateSchema = z.string().refine(isValidPartialDate)
+export type PartialDate = z.infer<typeof PartialDateSchema>
 
 const PersonDataSchema = z
   .object({
     firstName: z.string().trim().min(1).max(100),
     lastName: z.string().trim().max(100).optional(),
+    gender: GenderSchema.optional(),
+    dateOfBirth: PartialDateSchema.optional(),
+    dateOfDeath: PartialDateSchema.optional(),
   })
   .passthrough()
 
@@ -224,6 +232,9 @@ export class TreeOperationError extends Error {
 export interface PersonName {
   firstName: string
   lastName?: string
+  gender?: Gender
+  dateOfBirth?: PartialDate
+  dateOfDeath?: PartialDate
 }
 
 export type RelativeKind = 'parent' | 'child' | 'sibling' | 'partner'
@@ -492,6 +503,9 @@ function makePerson(name: PersonName, layer = 0, order = 0): PersonNode {
     data: {
       firstName: normalized.firstName,
       lastName: normalized.lastName,
+      ...(name.gender ? { gender: name.gender } : {}),
+      ...(name.dateOfBirth ? { dateOfBirth: name.dateOfBirth } : {}),
+      ...(name.dateOfDeath ? { dateOfDeath: name.dateOfDeath } : {}),
     },
     metaData: { layer, order },
   }
@@ -506,20 +520,38 @@ export function updatePerson(
   if (personIndex === -1) throw new TreeOperationError('unknownPerson')
   const normalized = normalizePersonName(name)
   const currentPerson = tree.nodes[personIndex]!
+  const nextData = {
+    firstName: normalized.firstName,
+    lastName: normalized.lastName,
+    ...(name.gender ? { gender: name.gender } : {}),
+    ...(name.dateOfBirth ? { dateOfBirth: name.dateOfBirth } : {}),
+    ...(name.dateOfDeath ? { dateOfDeath: name.dateOfDeath } : {}),
+    ...Object.fromEntries(
+      Object.entries(currentPerson.data).filter(
+        ([key]) =>
+          ![
+            'firstName',
+            'lastName',
+            'gender',
+            'dateOfBirth',
+            'dateOfDeath',
+          ].includes(key),
+      ),
+    ),
+  }
   if (
     currentPerson.data.firstName === normalized.firstName &&
-    (currentPerson.data.lastName ?? '') === normalized.lastName
+    (currentPerson.data.lastName ?? '') === normalized.lastName &&
+    currentPerson.data.gender === name.gender &&
+    currentPerson.data.dateOfBirth === name.dateOfBirth &&
+    currentPerson.data.dateOfDeath === name.dateOfDeath
   ) {
     return tree
   }
   const nodes = [...tree.nodes]
   nodes[personIndex] = {
     ...currentPerson,
-    data: {
-      ...currentPerson.data,
-      firstName: normalized.firstName,
-      lastName: normalized.lastName,
-    },
+    data: nextData,
   }
   return { ...tree, nodes }
 }
@@ -707,10 +739,11 @@ export function addRelativeWithResult(
     side,
   )
   const nodes = insertPersonAtOrder(
-    nodesAfterParentShift,
+    { ...tree, nodes: nodesAfterParentShift },
     person,
     layer,
     insertionOrder,
+    selectedId,
   )
   let result = {
     ...tree,
@@ -747,10 +780,13 @@ function isPersonMoveValidForLayer(
   const children = getChildrenOf(tree, personId)
   return (
     parents.every(
-      (parentId) => (getPerson(tree, parentId)?.metaData.layer ?? -1) < targetLayer,
+      (parentId) =>
+        (getPerson(tree, parentId)?.metaData.layer ?? -1) < targetLayer,
     ) &&
     children.every(
-      (childId) => (getPerson(tree, childId)?.metaData.layer ?? Number.POSITIVE_INFINITY) > targetLayer,
+      (childId) =>
+        (getPerson(tree, childId)?.metaData.layer ?? Number.POSITIVE_INFINITY) >
+        targetLayer,
     )
   )
 }
@@ -761,8 +797,9 @@ export function getMoveLevelAvailability(
 ): MoveLevelAvailability[] {
   const person = getPerson(tree, personId)
   if (!person) throw new TreeOperationError('unknownPerson')
-  const partIds =
-    getConnectedParts(tree).find((ids) => ids.includes(personId)) ?? [personId]
+  const partIds = getConnectedParts(tree).find((ids) =>
+    ids.includes(personId),
+  ) ?? [personId]
   const levels = [
     ...new Set(
       tree.nodes
@@ -773,11 +810,17 @@ export function getMoveLevelAvailability(
   const extraLevels = levels.length
     ? [Math.min(...levels) - 1, ...levels, Math.max(...levels) + 1]
     : [0]
-  return [...new Set(extraLevels)].sort((a, b) => a - b).map((layer) => ({
-    layer,
-    onlyThisPersonValid: isPersonMoveValidForLayer(tree, personId, layer),
-    withConnectedPeopleValid: isPersonMoveValidForLayer(tree, personId, layer),
-  }))
+  return [...new Set(extraLevels)]
+    .sort((a, b) => a - b)
+    .map((layer) => ({
+      layer,
+      onlyThisPersonValid: isPersonMoveValidForLayer(tree, personId, layer),
+      withConnectedPeopleValid: isPersonMoveValidForLayer(
+        tree,
+        personId,
+        layer,
+      ),
+    }))
 }
 
 export function moveOne(
@@ -793,16 +836,20 @@ export function moveOne(
     return tree
   }
 
-  const partIds =
-    getConnectedParts(tree).find((ids) => ids.includes(personId)) ?? [personId]
+  const partIds = getConnectedParts(tree).find((ids) =>
+    ids.includes(personId),
+  ) ?? [personId]
   const partSet = new Set(partIds)
   const partNodes = tree.nodes.filter(({ id }) => partSet.has(id))
   const minLayer = Math.min(...partNodes.map(({ metaData }) => metaData.layer))
   const maxLayer = Math.max(...partNodes.map(({ metaData }) => metaData.layer))
   const targetIsAboveTop = targetLayer < minLayer
   const targetIsBelowBottom = targetLayer > maxLayer
-  const finalTargetLayer =
-    targetIsAboveTop ? 0 : targetIsBelowBottom ? maxLayer + 1 : targetLayer
+  const finalTargetLayer = targetIsAboveTop
+    ? 0
+    : targetIsBelowBottom
+      ? maxLayer + 1
+      : targetLayer
 
   const nextLayerById = new Map<string, number>()
   for (const node of partNodes) {
@@ -827,8 +874,7 @@ export function moveOne(
   const oldOrderById = new Map(
     tree.nodes.map((node) => [node.id, node.metaData.order]),
   )
-  const centerOf = (id: string) =>
-    centers[id] ?? oldOrderById.get(id) ?? 0
+  const centerOf = (id: string) => centers[id] ?? oldOrderById.get(id) ?? 0
 
   for (const [layer, ids] of rowOrderMap.entries()) {
     const sorted = [...ids].sort((a, b) => {
@@ -843,7 +889,8 @@ export function moveOne(
       const insertionIndex = withoutMoved.findIndex(
         (id) => centerOf(id) > dropX,
       )
-      const safeInsertionIndex = insertionIndex < 0 ? withoutMoved.length : insertionIndex
+      const safeInsertionIndex =
+        insertionIndex < 0 ? withoutMoved.length : insertionIndex
       const targetOrder = [
         ...withoutMoved.slice(0, safeInsertionIndex),
         personId,
@@ -973,8 +1020,12 @@ function getRelativeInsertionOrder(
   centers?: Record<string, number>,
   side?: 'left' | 'right',
 ): number {
+  const partIds = getConnectedParts(tree).find((ids) =>
+    ids.includes(selectedId),
+  ) ?? [selectedId]
+  const partSet = new Set(partIds)
   const row = tree.nodes
-    .filter(({ metaData }) => metaData.layer === layer)
+    .filter(({ id, metaData }) => partSet.has(id) && metaData.layer === layer)
     .sort((a, b) => a.metaData.order - b.metaData.order)
   const selected = row.findIndex(({ id }) => id === selectedId)
   const centerOf = (id: string) =>
@@ -1099,13 +1150,19 @@ function getRelativeInsertionOrder(
 }
 
 function insertPersonAtOrder(
-  existing: PersonNode[],
+  tree: FamilyTree,
   person: PersonNode,
   layer: number,
   order: number,
+  selectedId: string,
 ): PersonNode[] {
+  const existing = tree.nodes
+  const partIds = getConnectedParts(tree).find((ids) =>
+    ids.includes(selectedId),
+  ) ?? [selectedId]
+  const partSet = new Set(partIds)
   const row = existing
-    .filter(({ metaData }) => metaData.layer === layer)
+    .filter(({ id, metaData }) => partSet.has(id) && metaData.layer === layer)
     .sort((a, b) => a.metaData.order - b.metaData.order)
   const clampedOrder = Math.max(0, Math.min(order, row.length))
   const rowIds = new Set(row.map(({ id }) => id))

@@ -48,7 +48,7 @@ interface AppState {
   loadedFromFile: boolean
   viewKey: number
   undo: {
-    kind: 'delete' | 'move'
+    kind: 'edit' | 'delete' | 'move'
     tree: FamilyTree
     selectedId: string | null
     revision: number
@@ -114,7 +114,16 @@ function reducer(state: AppState, action: AppAction): AppState {
         tree: action.tree,
         revision: state.revision + 1,
         loadedFromFile: false,
-        undo: null,
+        undo: {
+          kind: 'edit',
+          tree: state.tree,
+          selectedId: state.selectedId,
+          revision: state.revision,
+          exportedRevision: state.exportedRevision,
+          exportedAt: state.exportedAt,
+          loadedFromFile: state.loadedFromFile,
+          hasUnexportedEditOrDelete: state.hasUnexportedEditOrDelete,
+        },
         hasUnexportedEditOrDelete: true,
       }
     case 'delete-person':
@@ -367,6 +376,10 @@ function App() {
     if (tree === state.tree) return false
     clearToast()
     dispatch({ type: 'edit-person', tree })
+    const updatedPerson = tree.nodes.find(({ id }) => id === personId)
+    if (updatedPerson) {
+      showToast({ kind: 'edit', name: getDisplayName(updatedPerson) }, 10_000)
+    }
     return true
   }
 
@@ -381,8 +394,13 @@ function App() {
     showToast({ kind: 'delete', name }, 10_000)
   }
 
-  function undoDelete() {
-    if (!state.undo || (toast?.kind !== 'delete' && toast?.kind !== 'move'))
+  function undoChange() {
+    if (
+      !state.undo ||
+      (toast?.kind !== 'delete' &&
+        toast?.kind !== 'move' &&
+        toast?.kind !== 'edit')
+    )
       return
     const name = toast.kind === 'delete' ? toast.name : undefined
     if (exportToastTimeoutRef.current !== null) {
@@ -392,7 +410,14 @@ function App() {
     setToast(null)
     focusAfterTreeActionRef.current = 'undo'
     dispatch({ type: 'undo-change' })
-    showToast(name ? { kind: 'restored', name } : { kind: 'move-undone' }, 5000)
+    showToast(
+      name
+        ? { kind: 'restored', name }
+        : toast.kind === 'edit'
+          ? { kind: 'edit-undone' }
+          : { kind: 'move-undone' },
+      5000,
+    )
   }
 
   function movePerson(tree: FamilyTree, personId: string) {
@@ -414,9 +439,12 @@ function App() {
 
   function showToast(message: ToastMessage, duration = 8000) {
     if (
-      (toast?.kind === 'delete' || toast?.kind === 'move') &&
+      (toast?.kind === 'delete' ||
+        toast?.kind === 'move' ||
+        toast?.kind === 'edit') &&
       message.kind !== 'delete' &&
-      message.kind !== 'move'
+      message.kind !== 'move' &&
+      message.kind !== 'edit'
     ) {
       dispatch({ type: 'clear-undo' })
     }
@@ -427,7 +455,11 @@ function App() {
     exportToastTimeoutRef.current = window.setTimeout(() => {
       exportToastTimeoutRef.current = null
       setToast(null)
-      if (message.kind === 'delete' || message.kind === 'move') {
+      if (
+        message.kind === 'delete' ||
+        message.kind === 'move' ||
+        message.kind === 'edit'
+      ) {
         dispatch({ type: 'clear-undo' })
       }
     }, duration)
@@ -775,13 +807,17 @@ function App() {
       )}
       <Toast
         message={toast}
-        onUndo={undoDelete}
+        onUndo={undoChange}
         onClose={() => {
           if (exportToastTimeoutRef.current !== null) {
             window.clearTimeout(exportToastTimeoutRef.current)
             exportToastTimeoutRef.current = null
           }
-          if (toast?.kind === 'delete' || toast?.kind === 'move')
+          if (
+            toast?.kind === 'delete' ||
+            toast?.kind === 'move' ||
+            toast?.kind === 'edit'
+          )
             dispatch({ type: 'clear-undo' })
           setToast(null)
         }}

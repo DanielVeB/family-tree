@@ -103,6 +103,31 @@ describe('family tree operations', () => {
     },
   )
 
+  it('inserts a relative without changing the order of another disconnected part', () => {
+    let tree = addFirstPerson(createEmptyTree(), { firstName: 'First' })
+    tree = addFirstPerson(tree, { firstName: 'Separate' })
+    const firstId = tree.nodes[0]!.id
+    const separateId = tree.nodes[1]!.id
+    const updated = addRelative(
+      tree,
+      firstId,
+      'sibling',
+      { firstName: 'New sibling' },
+      undefined,
+      undefined,
+      'left',
+    )
+    const separate = updated.nodes.find(({ id }) => id === separateId)!
+    const first = updated.nodes.find(({ id }) => id === firstId)!
+    const sibling = updated.nodes.find(
+      ({ data }) => data.firstName === 'New sibling',
+    )!
+
+    expect(separate.metaData.order).toBe(0)
+    expect(sibling.metaData.order).toBe(0)
+    expect(first.metaData.order).toBe(1)
+  })
+
   it('rejects empty or too-long names with typed errors', () => {
     expect(() =>
       addFirstPerson(createEmptyTree(), { firstName: '  ' }),
@@ -123,6 +148,51 @@ describe('family tree operations', () => {
     expect(() =>
       addRelative(tree, 'missing', 'child', { firstName: 'Child' }),
     ).toThrowError(new TreeOperationError('unknownPerson'))
+  })
+
+  it('validates optional person detail fields without changing the file version', () => {
+    const base = {
+      version: 1,
+      nodes: [
+        {
+          id: 'a',
+          data: { firstName: 'Anna' },
+          metaData: { layer: 0, order: 0 },
+        },
+      ],
+      edges: [],
+    }
+    expect(TreeSchema.safeParse(base).success).toBe(true)
+    for (const data of [
+      { firstName: 'Anna', gender: 'other' },
+      { firstName: 'Anna', dateOfBirth: '07.03.1948' },
+      { firstName: 'Anna', dateOfBirth: '2021-02-30' },
+      { firstName: 'Anna', dateOfDeath: 2019 },
+    ]) {
+      expect(
+        TreeSchema.safeParse({
+          ...base,
+          nodes: [{ ...base.nodes[0], data }],
+        }).success,
+      ).toBe(false)
+    }
+    expect(
+      TreeSchema.safeParse({
+        ...base,
+        nodes: [
+          {
+            ...base.nodes[0],
+            data: {
+              firstName: 'Anna',
+              gender: 'female',
+              dateOfBirth: '1948-03-07',
+              dateOfDeath: '2019',
+              futureField: 'preserved',
+            },
+          },
+        ],
+      }).success,
+    ).toBe(true)
   })
 
   it('keeps new relatives at stored levels and shifts the part when adding a top parent', () => {

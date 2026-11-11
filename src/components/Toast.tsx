@@ -12,6 +12,8 @@ export type ToastMessage =
   | { kind: 'import-error' }
   | { kind: 'delete'; name: string }
   | { kind: 'restored'; name: string }
+  | { kind: 'edit'; name: string }
+  | { kind: 'edit-undone' }
   | { kind: 'move'; name: string }
   | { kind: 'move-undone' }
   | { kind: 'layers-recalculated' }
@@ -66,6 +68,19 @@ export default function Toast({ message, onClose, onUndo }: ToastProps) {
             {t('deleteUndo')}
           </button>
         </>
+      ) : message.kind === 'edit' ? (
+        <>
+          <p>{t('person.editSaved', { name: message.name })}</p>
+          <button
+            className="button button--ghost export-toast__undo"
+            type="button"
+            onClick={onUndo}
+          >
+            {t('deleteUndo')}
+          </button>
+        </>
+      ) : message.kind === 'edit-undone' ? (
+        <p>{t('person.editUndone')}</p>
       ) : message.kind === 'move-undone' ? (
         <p>{t('layers.toast.undone')}</p>
       ) : message.kind === 'layers-recalculated' ? (
