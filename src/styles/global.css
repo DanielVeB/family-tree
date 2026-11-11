@@ -576,7 +576,7 @@ h1 {
   font-weight: 600;
   line-height: 1.25;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-line;
 }
 
 .person-card__dates {

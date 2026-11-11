@@ -1368,6 +1368,9 @@ function PersonCard({
 }) {
   const { t } = useTranslation()
   const name = getDisplayName(person)
+  const cardName = [person.data.firstName, person.data.lastName]
+    .filter(Boolean)
+    .join('\n')
   const datesLine = formatDateYears(
     person.data.dateOfBirth,
     person.data.dateOfDeath,
@@ -1413,7 +1416,7 @@ function PersonCard({
         </span>
         <span className="person-card__copy">
           <span className="person-card__name" title={name}>
-            {name}
+            {cardName}
           </span>
           {datesLine && (
             <span className="person-card__dates" title={datesLine}>
