@@ -102,6 +102,11 @@ describe('person movement', () => {
     )
     expect(getMoveLevelAvailability(tree, 'person')).toEqual([
       {
+        layer: -1,
+        onlyThisPersonValid: false,
+        withConnectedPeopleValid: false,
+      },
+      {
         layer: 0,
         onlyThisPersonValid: false,
         withConnectedPeopleValid: false,
@@ -114,24 +119,28 @@ describe('person movement', () => {
       {
         layer: 2,
         onlyThisPersonValid: false,
-        withConnectedPeopleValid: true,
+        withConnectedPeopleValid: false,
+      },
+      {
+        layer: 3,
+        onlyThisPersonValid: false,
+        withConnectedPeopleValid: false,
       },
     ])
-    expect(() =>
-      moveSelection(tree, {
-        personId: 'person',
-        targetLayer: 2,
-        dx: 0,
-        moveConnected: false,
-      }),
-    ).toThrow()
-    const moved = moveSelection(tree, {
+    const invalid = moveSelection(tree, {
       personId: 'person',
       targetLayer: 2,
       dx: 0,
-      moveConnected: true,
+      moveConnected: false,
     })
-    expect(moved.nodes.map(({ metaData }) => metaData.layer)).toEqual([0, 1, 2])
+    expect(invalid).toBe(tree)
+    const sameLayer = moveSelection(tree, {
+      personId: 'person',
+      targetLayer: 1,
+      dx: 0,
+      moveConnected: false,
+    })
+    expect(sameLayer).toBe(tree)
   })
 
   it('assigns levels to married and sibling groups while preserving parent order', () => {

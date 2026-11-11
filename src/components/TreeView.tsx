@@ -10,7 +10,6 @@ import {
 } from 'react'
 import { useTranslation } from 'react-i18next'
 import DeletePersonDialog from './DeletePersonDialog'
-import MoveDialog from './MoveDialog'
 import {
   computeLayout,
   LAYOUT_SPACING,
@@ -18,7 +17,6 @@ import {
 } from '../layout/computeLayout'
 import {
   getDeletePreview,
-  getConnectedPeople,
   getConnectedParts,
   getMoveLevelAvailability,
   getChildrenOf,
@@ -29,7 +27,7 @@ import {
   getParentsOf,
   getPartnersOf,
   getSiblingsOf,
-  moveSelection,
+  moveOne,
   TreeOperationError,
   type FamilyTree,
   type ConnectionAnswers,
@@ -54,11 +52,7 @@ interface TreeViewProps {
   ) => void
   onUpdatePerson: (personId: string, name: PersonName) => boolean
   onDeletePerson: (personId: string) => void
-  onMovePerson: (
-    tree: FamilyTree,
-    personId: string,
-    connectedCount: number,
-  ) => void
+  onMovePerson: (tree: FamilyTree, personId: string) => void
 }
 
 interface DragPreview {
@@ -71,7 +65,6 @@ interface DragPreview {
   dy: number
   availability: ReturnType<typeof getMoveLevelAvailability>
   partIds: string[]
-  connectedIds: string[]
 }
 
 const relationButtons: Array<{ kind: RelativeKind; label: string }> = [
@@ -145,12 +138,6 @@ export default function TreeView({
     { checked: {}, choice: null },
   )
   const [connectionError, setConnectionError] = useState(false)
-  const [pendingMove, setPendingMove] = useState<{
-    request: MoveRequest
-    connectedCount: number
-    checked: boolean
-    disabled?: 'needed' | 'blocked'
-  } | null>(null)
   const [moveAnnouncement, setMoveAnnouncement] = useState('')
   const connectionChoiceRef = useRef<HTMLInputElement>(null)
   const relativeFirstNameRef = useRef<HTMLInputElement>(null)
@@ -173,20 +160,28 @@ export default function TreeView({
     ? getMoveLevelAvailability(tree, selectedId)
     : []
   const applyMove = useCallback(
-    (request: MoveRequest, connectedCount: number) => {
-      const result = moveSelection(tree, request)
+    (request: MoveRequest) => {
+      const person = tree.nodes.find(({ id }) => id === request.personId)
+      if (!person) return
+      const dropX =
+        (request.centers?.[request.personId] ?? person.metaData.order) + request.dx
+      const result = moveOne(
+        tree,
+        request.personId,
+        request.targetLayer,
+        dropX,
+        request.centers,
+      )
       if (result === tree) return
-      const movedPerson = tree.nodes.find(({ id }) => id === request.personId)
-      if (!movedPerson) return
-      onMovePerson(result, request.personId, connectedCount)
+      onMovePerson(result, request.personId)
       const moved = result.nodes.find(({ id }) => id === request.personId)
       setMoveAnnouncement(
-        moved && moved.metaData.layer !== movedPerson.metaData.layer
+        moved && moved.metaData.layer !== person.metaData.layer
           ? t('layers.announceLevel', {
-              name: getDisplayName(movedPerson),
+              name: getDisplayName(person),
               level: moved.metaData.layer + 1,
             })
-          : t('layers.announce', { name: getDisplayName(movedPerson) }),
+          : t('layers.announce', { name: getDisplayName(person) }),
       )
     },
     [onMovePerson, t, tree],
@@ -196,27 +191,12 @@ export default function TreeView({
     (request: MoveRequest) => {
       const person = tree.nodes.find(({ id }) => id === request.personId)
       if (!person) return
-      const connectedIds = getConnectedPeople(tree, request.personId)
-      const connectedCount = connectedIds.length - 1
       const availability = getMoveLevelAvailability(
         tree,
         request.personId,
       ).find(({ layer }) => layer === request.targetLayer)
-      if (!availability) return
-      const onlyValid = availability.onlyThisPersonValid
-      const withValid = availability.withConnectedPeopleValid
-      if (!onlyValid && !withValid) return
-      if (connectedCount === 0) {
-        applyMove({ ...request, moveConnected: false }, 0)
-        return
-      }
-      setPendingMove({
-        request,
-        connectedCount,
-        checked: withValid,
-        ...(!onlyValid && withValid ? { disabled: 'needed' as const } : {}),
-        ...(onlyValid && !withValid ? { disabled: 'blocked' as const } : {}),
-      })
+      if (!availability || !availability.onlyThisPersonValid) return
+      applyMove(request)
     },
     [applyMove, tree],
   )
@@ -229,6 +209,14 @@ export default function TreeView({
       const person = tree.nodes.find(({ id }) => id === personId)
       if (!person || relativeForm || editing) return
       const currentLayer = person.metaData.layer
+      const centers = Object.fromEntries(
+        tree.nodes.map((person) => [
+          person.id,
+          layout.cardCenters[person.id]
+            ? layout.cardCenters[person.id]!.x
+            : person.metaData.order,
+        ]),
+      )
       if (direction === 'up' || direction === 'down') {
         const targetLayer = currentLayer + (direction === 'up' ? -1 : 1)
         requestMove({
@@ -236,14 +224,7 @@ export default function TreeView({
           targetLayer,
           dx: 0,
           moveConnected: false,
-          centers: Object.fromEntries(
-            tree.nodes.map((person) => [
-              person.id,
-              layout.cardCenters[person.id]
-                ? layout.cardCenters[person.id]!.x
-                : person.metaData.order,
-            ]),
-          ),
+          centers,
         })
         return
       }
@@ -266,14 +247,7 @@ export default function TreeView({
         targetLayer: currentLayer,
         dx,
         moveConnected: false,
-        centers: Object.fromEntries(
-          tree.nodes.map((person) => [
-            person.id,
-            layout.cardCenters[person.id]
-              ? layout.cardCenters[person.id]!.x
-              : person.metaData.order,
-          ]),
-        ),
+        centers,
       })
     },
     [
@@ -313,7 +287,6 @@ export default function TreeView({
         dy: 0,
         availability: getMoveLevelAvailability(tree, personId),
         partIds,
-        connectedIds: getConnectedPeople(tree, personId),
       }
       setDragPreview(preview)
       panStart.current = null
@@ -784,12 +757,7 @@ export default function TreeView({
         const availability = activeDrag.availability.find(
           ({ layer }) => layer === activeDrag.targetLayer,
         )
-        if (
-          selected &&
-          availability &&
-          (availability.onlyThisPersonValid ||
-            availability.withConnectedPeopleValid)
-        ) {
+        if (selected && availability && availability.onlyThisPersonValid) {
           requestMove({
             personId: activeDrag.personId,
             targetLayer: activeDrag.targetLayer,
@@ -955,22 +923,7 @@ export default function TreeView({
           </svg>
           {tree.nodes.map((person) => {
             const originalPoint = layout.positions[person.id]
-            const showConnectedPreview = drag
-              ? (drag.availability.find(
-                  ({ layer }) => layer === drag.targetLayer,
-                )?.withConnectedPeopleValid ?? false)
-              : false
-            const followsDrag = Boolean(
-              drag?.connectedIds.includes(person.id) &&
-              (person.id === drag.personId || showConnectedPreview),
-            )
-            const point =
-              drag && originalPoint && followsDrag
-                ? {
-                    x: originalPoint.x + drag.dx,
-                    y: originalPoint.y + drag.dy,
-                  }
-                : originalPoint
+            const point = originalPoint
             return (
               <PersonCard
                 key={person.id}
@@ -980,9 +933,7 @@ export default function TreeView({
                 width={cardWidth}
                 held={heldPersonId === person.id}
                 dragging={drag?.personId === person.id}
-                dragConnected={
-                  drag?.personId !== person.id && Boolean(followsDrag)
-                }
+                dragConnected={false}
                 onSelect={() => {
                   if (suppressCardClick.current) {
                     suppressCardClick.current = false
@@ -1323,38 +1274,6 @@ export default function TreeView({
           onCancel={() => {
             setDeletePreview(null)
             window.requestAnimationFrame(() => deleteButtonRef.current?.focus())
-          }}
-        />
-      )}
-      {pendingMove && (
-        <MoveDialog
-          name={selectedName}
-          connectedCount={pendingMove.connectedCount}
-          moveConnected={pendingMove.checked}
-          connectedDisabled={pendingMove.disabled}
-          onMoveConnected={(checked) =>
-            setPendingMove((current) =>
-              current ? { ...current, checked } : current,
-            )
-          }
-          onConfirm={() => {
-            const moveConnected = pendingMove.checked
-            const movedPersonId = pendingMove.request.personId
-            applyMove(
-              { ...pendingMove.request, moveConnected },
-              moveConnected ? pendingMove.connectedCount : 0,
-            )
-            setPendingMove(null)
-            window.requestAnimationFrame(() =>
-              document.getElementById(`person-${movedPersonId}`)?.focus(),
-            )
-          }}
-          onCancel={() => {
-            const movedPersonId = pendingMove.request.personId
-            setPendingMove(null)
-            window.requestAnimationFrame(() =>
-              document.getElementById(`person-${movedPersonId}`)?.focus(),
-            )
           }}
         />
       )}

@@ -12,7 +12,7 @@ export type ToastMessage =
   | { kind: 'import-error' }
   | { kind: 'delete'; name: string }
   | { kind: 'restored'; name: string }
-  | { kind: 'move'; name: string; connectedCount: number }
+  | { kind: 'move'; name: string }
   | { kind: 'move-undone' }
   | { kind: 'layers-recalculated' }
 
@@ -57,14 +57,7 @@ export default function Toast({ message, onClose, onUndo }: ToastProps) {
         <p>{t('deleteRestored', { name: message.name })}</p>
       ) : message.kind === 'move' ? (
         <>
-          <p>
-            {message.connectedCount
-              ? t('layers.toast.movedMany', {
-                  name: message.name,
-                  count: message.connectedCount,
-                })
-              : t('layers.toast.moved', { name: message.name })}
-          </p>
+          <p>{t('layers.toast.moved', { name: message.name })}</p>
           <button
             className="button button--ghost export-toast__undo"
             type="button"

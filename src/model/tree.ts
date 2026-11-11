@@ -732,6 +732,172 @@ export interface MoveRequest {
   centers?: Record<string, number>
 }
 
+function isPersonMoveValidForLayer(
+  tree: FamilyTree,
+  personId: string,
+  targetLayer: number,
+): boolean {
+  const person = getPerson(tree, personId)
+  if (!person) throw new TreeOperationError('unknownPerson')
+  const parents = getParentsOf(tree, personId)
+  const children = getChildrenOf(tree, personId)
+  return (
+    parents.every(
+      (parentId) => (getPerson(tree, parentId)?.metaData.layer ?? -1) < targetLayer,
+    ) &&
+    children.every(
+      (childId) => (getPerson(tree, childId)?.metaData.layer ?? Number.POSITIVE_INFINITY) > targetLayer,
+    )
+  )
+}
+
+export function getMoveLevelAvailability(
+  tree: FamilyTree,
+  personId: string,
+): MoveLevelAvailability[] {
+  const person = getPerson(tree, personId)
+  if (!person) throw new TreeOperationError('unknownPerson')
+  const partIds =
+    getConnectedParts(tree).find((ids) => ids.includes(personId)) ?? [personId]
+  const levels = [
+    ...new Set(
+      tree.nodes
+        .filter(({ id }) => partIds.includes(id))
+        .map(({ metaData }) => metaData.layer),
+    ),
+  ].sort((a, b) => a - b)
+  const extraLevels = levels.length
+    ? [Math.min(...levels) - 1, ...levels, Math.max(...levels) + 1]
+    : [0]
+  return [...new Set(extraLevels)].sort((a, b) => a - b).map((layer) => ({
+    layer,
+    onlyThisPersonValid: isPersonMoveValidForLayer(tree, personId, layer),
+    withConnectedPeopleValid: isPersonMoveValidForLayer(tree, personId, layer),
+  }))
+}
+
+export function moveOne(
+  tree: FamilyTree,
+  personId: string,
+  targetLayer: number,
+  dropX: number,
+  centers: Record<string, number> = {},
+): FamilyTree {
+  const person = getPerson(tree, personId)
+  if (!person) throw new TreeOperationError('unknownPerson')
+  if (!isPersonMoveValidForLayer(tree, personId, targetLayer)) {
+    return tree
+  }
+
+  const partIds =
+    getConnectedParts(tree).find((ids) => ids.includes(personId)) ?? [personId]
+  const partSet = new Set(partIds)
+  const partNodes = tree.nodes.filter(({ id }) => partSet.has(id))
+  const minLayer = Math.min(...partNodes.map(({ metaData }) => metaData.layer))
+  const maxLayer = Math.max(...partNodes.map(({ metaData }) => metaData.layer))
+  const targetIsAboveTop = targetLayer < minLayer
+  const targetIsBelowBottom = targetLayer > maxLayer
+  const finalTargetLayer =
+    targetIsAboveTop ? 0 : targetIsBelowBottom ? maxLayer + 1 : targetLayer
+
+  const nextLayerById = new Map<string, number>()
+  for (const node of partNodes) {
+    if (node.id === personId) {
+      nextLayerById.set(node.id, finalTargetLayer)
+      continue
+    }
+    nextLayerById.set(
+      node.id,
+      targetIsAboveTop ? node.metaData.layer + 1 : node.metaData.layer,
+    )
+  }
+
+  const rowOrderMap = new Map<number, string[]>()
+  const rowOrders = new Map<number, Map<string, number>>()
+  for (const [id, layer] of nextLayerById.entries()) {
+    const row = rowOrderMap.get(layer) ?? []
+    row.push(id)
+    rowOrderMap.set(layer, row)
+  }
+
+  const oldOrderById = new Map(
+    tree.nodes.map((node) => [node.id, node.metaData.order]),
+  )
+  const centerOf = (id: string) =>
+    centers[id] ?? oldOrderById.get(id) ?? 0
+
+  for (const [layer, ids] of rowOrderMap.entries()) {
+    const sorted = [...ids].sort((a, b) => {
+      const aOrder = oldOrderById.get(a) ?? 0
+      const bOrder = oldOrderById.get(b) ?? 0
+      const aCenter = centerOf(a)
+      const bCenter = centerOf(b)
+      return aCenter - bCenter || aOrder - bOrder
+    })
+    if (layer === finalTargetLayer && sorted.includes(personId)) {
+      const withoutMoved = sorted.filter((id) => id !== personId)
+      const insertionIndex = withoutMoved.findIndex(
+        (id) => centerOf(id) > dropX,
+      )
+      const safeInsertionIndex = insertionIndex < 0 ? withoutMoved.length : insertionIndex
+      const targetOrder = [
+        ...withoutMoved.slice(0, safeInsertionIndex),
+        personId,
+        ...withoutMoved.slice(safeInsertionIndex),
+      ]
+      const orderMap = new Map<string, number>()
+      targetOrder.forEach((id, order) => orderMap.set(id, order))
+      rowOrders.set(layer, orderMap)
+      continue
+    }
+    const orderMap = new Map<string, number>()
+    sorted.forEach((id, order) => orderMap.set(id, order))
+    rowOrders.set(layer, orderMap)
+  }
+
+  const nextNodes = tree.nodes.map((node) => {
+    if (!partSet.has(node.id)) return node
+    const layer = nextLayerById.get(node.id) ?? node.metaData.layer
+    const order = rowOrders.get(layer)?.get(node.id) ?? node.metaData.order
+    if (
+      node.metaData.layer === layer &&
+      node.metaData.order === order &&
+      node.id === personId
+    ) {
+      return node
+    }
+    return {
+      ...node,
+      metaData: { ...node.metaData, layer, order },
+    }
+  })
+
+  const repaired = repairTreePositions({ ...tree, nodes: nextNodes })
+  return repaired.nodes.every(
+    (node, index) =>
+      node.metaData.layer === tree.nodes[index]?.metaData.layer &&
+      node.metaData.order === tree.nodes[index]?.metaData.order,
+  )
+    ? tree
+    : repaired
+}
+
+export function moveSelection(
+  tree: FamilyTree,
+  request: MoveRequest,
+): FamilyTree {
+  const person = getPerson(tree, request.personId)
+  if (!person) throw new TreeOperationError('unknownPerson')
+  const startX = request.centers?.[request.personId] ?? person.metaData.order
+  return moveOne(
+    tree,
+    request.personId,
+    request.targetLayer,
+    startX + request.dx,
+    request.centers,
+  )
+}
+
 export function getConnectedPeople(
   tree: FamilyTree,
   personId: string,
@@ -778,124 +944,6 @@ export function getConnectedPeople(
     }
   }
   return tree.nodes.filter(({ id }) => connected.has(id)).map(({ id }) => id)
-}
-
-function isLayerMoveValid(
-  tree: FamilyTree,
-  movedIds: Set<string>,
-  delta: number,
-): boolean {
-  if (delta === 0) return true
-  const layers = new Map(
-    tree.nodes.map(({ id, metaData }) => [
-      id,
-      metaData.layer + (movedIds.has(id) ? delta : 0),
-    ]),
-  )
-  if ([...layers.values()].some((layer) => layer < 0)) return false
-  if ([...layers].some(([id, layer]) => movedIds.has(id) && layer < 0)) {
-    return false
-  }
-  return tree.edges.every((edge) => {
-    if (edge.type !== 'child') return true
-    if (movedIds.has(edge.from) === movedIds.has(edge.to)) return true
-    return (layers.get(edge.from) ?? 0) < (layers.get(edge.to) ?? 0)
-  })
-}
-
-export function getMoveLevelAvailability(
-  tree: FamilyTree,
-  personId: string,
-): MoveLevelAvailability[] {
-  const person = getPerson(tree, personId)
-  if (!person) throw new TreeOperationError('unknownPerson')
-  const partIds = new Set(
-    getConnectedParts(tree).find((ids) => ids.includes(personId)) ?? [],
-  )
-  const levels = [
-    ...new Set(
-      tree.nodes
-        .filter(({ id }) => partIds.has(id))
-        .map(({ metaData }) => metaData.layer),
-    ),
-  ].sort((a, b) => a - b)
-  const connected = new Set(getConnectedPeople(tree, personId))
-  return levels.map((layer) => {
-    const delta = layer - person.metaData.layer
-    return {
-      layer,
-      onlyThisPersonValid: isLayerMoveValid(tree, new Set([personId]), delta),
-      withConnectedPeopleValid: isLayerMoveValid(tree, connected, delta),
-    }
-  })
-}
-
-export function moveSelection(
-  tree: FamilyTree,
-  request: MoveRequest,
-): FamilyTree {
-  const person = getPerson(tree, request.personId)
-  if (!person) throw new TreeOperationError('unknownPerson')
-  const delta = request.targetLayer - person.metaData.layer
-  const connected = new Set(getConnectedPeople(tree, request.personId))
-  const moved = request.moveConnected ? connected : new Set([request.personId])
-  if (!isLayerMoveValid(tree, moved, delta)) {
-    throw new TreeOperationError('invalidConnectionAnswer')
-  }
-
-  const shifted = tree.nodes.map((node) =>
-    moved.has(node.id)
-      ? {
-          ...node,
-          metaData: { ...node.metaData, layer: node.metaData.layer + delta },
-        }
-      : node,
-  )
-  const movedPart = new Set(
-    getConnectedParts(tree).find((ids) => ids.includes(request.personId)) ?? [],
-  )
-  const ordered = [...shifted]
-  for (const part of getConnectedParts({ ...tree, nodes: shifted })) {
-    if (![...part].some((id) => movedPart.has(id))) continue
-    const rows = new Map<number, PersonNode[]>()
-    for (const node of shifted) {
-      if (!part.includes(node.id)) continue
-      const row = rows.get(node.metaData.layer) ?? []
-      row.push(node)
-      rows.set(node.metaData.layer, row)
-    }
-    for (const [layer, row] of rows) {
-      row.sort((a, b) => {
-        const aX =
-          (request.centers?.[a.id] ?? a.metaData.order) +
-          (moved.has(a.id) ? request.dx : 0)
-        const bX =
-          (request.centers?.[b.id] ?? b.metaData.order) +
-          (moved.has(b.id) ? request.dx : 0)
-        return (
-          aX - bX ||
-          a.metaData.order - b.metaData.order ||
-          tree.nodes.findIndex(({ id }) => id === a.id) -
-            tree.nodes.findIndex(({ id }) => id === b.id)
-        )
-      })
-      row.forEach((node, order) => {
-        const index = ordered.findIndex(({ id }) => id === node.id)
-        ordered[index] = {
-          ...node,
-          metaData: { ...node.metaData, layer, order },
-        }
-      })
-    }
-  }
-  const result = repairTreePositions({ ...tree, nodes: ordered })
-  return result.nodes.every(
-    ({ id, metaData }) =>
-      metaData.layer === getPerson(tree, id)?.metaData.layer &&
-      metaData.order === getPerson(tree, id)?.metaData.order,
-  )
-    ? tree
-    : result
 }
 
 function shiftPartDown(tree: FamilyTree, personId: string): PersonNode[] {

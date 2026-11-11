@@ -914,7 +914,7 @@ describe('edit and delete people', () => {
     expect(screen.getByText('Loaded from file')).toBeInTheDocument()
   })
 
-  it('asks about connected relatives and supports Undo for both move choices', async () => {
+  it('moves one person instantly and supports Undo without a dialog', async () => {
     const user = userEvent.setup()
     render(<App />)
     const tree = JSON.stringify({
@@ -952,29 +952,11 @@ describe('edit and delete people', () => {
       document.querySelector<HTMLInputElement>('input[type="file"]')!
     fireEvent.change(input, { target: { files: [makeFile(tree)] } })
     await user.click(await screen.findByRole('button', { name: 'Person' }))
+    expect(screen.queryByRole('dialog', { name: 'Move Person?' })).not.toBeInTheDocument()
     await user.click(
       screen.getByRole('button', { name: 'Move right one place' }),
     )
-    let dialog = screen.getByRole('dialog', { name: 'Move Person?' })
-    let checkbox = screen.getByRole('checkbox')
-    expect(checkbox).toBeChecked()
-    await user.click(checkbox)
-    await user.click(within(dialog).getByRole('button', { name: 'Move' }))
     expect(await screen.findByText('Moved Person')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Undo' }))
-    expect(await screen.findByText('Move undone')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Person' }))
-    await user.click(
-      screen.getByRole('button', { name: 'Move right one place' }),
-    )
-    dialog = screen.getByRole('dialog', { name: 'Move Person?' })
-    checkbox = screen.getByRole('checkbox')
-    expect(checkbox).toBeChecked()
-    await user.click(within(dialog).getByRole('button', { name: 'Move' }))
-    expect(
-      await screen.findByText('Moved Person and 2 connected people'),
-    ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Undo' }))
     expect(await screen.findByText('Move undone')).toBeInTheDocument()
   })

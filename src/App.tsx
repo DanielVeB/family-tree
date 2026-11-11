@@ -393,20 +393,13 @@ function App() {
     showToast(name ? { kind: 'restored', name } : { kind: 'move-undone' }, 5000)
   }
 
-  function movePerson(
-    tree: FamilyTree,
-    personId: string,
-    connectedCount: number,
-  ) {
+  function movePerson(tree: FamilyTree, personId: string) {
     if (tree === state.tree) return
     const person = state.tree.nodes.find(({ id }) => id === personId)
     if (!person) throw new TreeOperationError('unknownPerson')
     clearToast()
     dispatch({ type: 'move-person', tree })
-    showToast(
-      { kind: 'move', name: getDisplayName(person), connectedCount },
-      10_000,
-    )
+    showToast({ kind: 'move', name: getDisplayName(person) }, 10_000)
   }
 
   function clearToast() {
