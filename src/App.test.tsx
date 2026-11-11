@@ -25,7 +25,7 @@ describe('start tree and add a relative', () => {
     await i18n.changeLanguage('en')
   })
 
-  it('creates the first person and adds a child from the detail view', async () => {
+  it('creates the first person and adds a child from its floating actions', async () => {
     const user = userEvent.setup()
     render(<App />)
 
@@ -54,11 +54,15 @@ describe('start tree and add a relative', () => {
     ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Zapisz' }))
 
+    const addedPerson = await screen.findByRole('button', {
+      name: 'Jan Przykładowy',
+    })
+    expect(addedPerson).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Jan Przykładowy' })).toBeNull()
+    const janCard = addedPerson.closest('.person-card')
+    expect(janCard).toHaveAttribute('aria-label', 'Jan Przykładowy')
     expect(
-      await screen.findByRole('button', { name: 'Jan Przykładowy' }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('heading', { name: 'Jan Przykładowy' }),
+      janCard?.querySelector('.person-card__control--edit'),
     ).toBeInTheDocument()
     expect(screen.getAllByText('Anna Testowa').length).toBeGreaterThan(0)
     await waitFor(() => {
@@ -184,7 +188,7 @@ describe('start tree and add a relative', () => {
     ).toBeInTheDocument()
     await user.keyboard('{Escape}')
     expect(screen.getByRole('button', { name: 'Maja' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Maja' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Maja' })).toBeInTheDocument()
 
     await user.click(
       screen.getByRole('button', { name: 'Importuj drzewo z pliku' }),
@@ -218,7 +222,7 @@ describe('start tree and add a relative', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'This file could not be loaded. Please choose a family tree file exported from this app.',
     )
-    expect(screen.getByRole('heading', { name: 'Anna' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Anna' })).toBeInTheDocument()
     expect(screen.getByText('Not exported yet')).toBeInTheDocument()
 
     fireEvent.change(input, {
@@ -233,7 +237,7 @@ describe('start tree and add a relative', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'This file could not be loaded. Please choose a family tree file exported from this app.',
     )
-    expect(screen.getByRole('heading', { name: 'Anna' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Anna' })).toBeInTheDocument()
     expect(screen.getByText('Not exported yet')).toBeInTheDocument()
   })
 
@@ -302,11 +306,11 @@ describe('start tree and add a relative', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await user.click(screen.getByRole('button', { name: 'Mia' }))
-    expect(screen.getByRole('button', { name: 'Add parent' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Add parent' })).toHaveAttribute(
-      'aria-describedby',
-      'relative-parent-limit',
-    )
+    const disabledParentAction = screen.getByRole('button', {
+      name: 'Mia already has two parents',
+    })
+    expect(disabledParentAction).toHaveAttribute('aria-disabled', 'true')
+    expect(disabledParentAction).toHaveAttribute('tabindex', '0')
 
     await user.click(screen.getByRole('button', { name: 'Anna' }))
     await user.click(screen.getByRole('button', { name: 'Add child' }))
@@ -617,8 +621,8 @@ describe('start tree and add a relative', () => {
     await user.keyboard('{Enter}')
 
     await user.click(screen.getByRole('button', { name: 'Anna' }))
-    await user.click(screen.getByRole('button', { name: 'Delete person' }))
-    await user.click(screen.getByRole('button', { name: /^Delete$/ }))
+    await user.click(getPersonActionButton('Anna', 'delete'))
+    await user.click(getDeleteConfirmButton())
     await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
     const newFirstName = screen.getByLabelText('First name')
     await waitFor(() => expect(newFirstName).toHaveFocus())
@@ -685,16 +689,17 @@ describe('edit and delete people', () => {
     expect(screen.getByText('Not exported yet')).toBeInTheDocument()
 
     expect(
-      screen.getByRole('button', { name: 'Edit Anna Testowa' }),
-    ).toHaveAttribute('title', 'Edit Anna Testowa')
-    await user.click(screen.getByRole('button', { name: 'Edit Anna Testowa' }))
+      getPersonActionButton('Anna Testowa', 'edit'),
+    ).toHaveAttribute('title', 'Edit')
+    await user.click(getPersonActionButton('Anna Testowa', 'edit'))
     const firstName = screen.getByLabelText('First name')
     expect(firstName).toHaveFocus()
     await user.click(screen.getByRole('button', { name: 'Save' }))
-    expect(screen.getByRole('heading', { name: 'Anna Testowa' })).toBeVisible()
+    expect(screen.queryByLabelText('First name')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Anna Testowa' })).toBeVisible()
     expect(screen.getByText('Not exported yet')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Edit Anna Testowa' }))
+    await user.click(getPersonActionButton('Anna Testowa', 'edit'))
     await user.clear(screen.getByLabelText('First name'))
     await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(screen.getByRole('alert')).toHaveTextContent(
@@ -715,10 +720,10 @@ describe('edit and delete people', () => {
       await screen.findByRole('button', { name: 'Łucja Żółć' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: 'Łucja Żółć' }),
-    ).toBeInTheDocument()
+      screen.queryByRole('heading', { name: 'Łucja Żółć' }),
+    ).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Mia' }))
-    expect(screen.getAllByText('Łucja Żółć').length).toBeGreaterThan(1)
+    expect(screen.getAllByText('Łucja Żółć')).toHaveLength(1)
     expect(
       screen.getByText('Zmiany nie zostały wyeksportowane'),
     ).toBeInTheDocument()
@@ -756,10 +761,10 @@ describe('edit and delete people', () => {
     )
     await screen.findByRole('dialog', { name: 'Name your file' })
     await user.click(screen.getByRole('button', { name: 'Export' }))
-    await user.click(screen.getByRole('button', { name: 'Delete person' }))
+    await user.click(getPersonActionButton('Anna', 'delete'))
     expect(
-      screen.getByRole('button', { name: 'Delete person' }),
-    ).toHaveAttribute('title', 'Delete person')
+      getPersonActionButton('Anna', 'delete'),
+    ).toHaveAttribute('title', 'Delete')
     const dialog = screen.getByRole('alertdialog', { name: 'Delete Anna?' })
     expect(dialog).toHaveTextContent(
       '2 relationships will be removed along with this person.',
@@ -772,12 +777,12 @@ describe('edit and delete people', () => {
     expect(screen.getByRole('button', { name: 'Anna' })).toBeInTheDocument()
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Delete person' }),
+        getPersonActionButton('Anna', 'delete'),
       ).toHaveFocus(),
     )
 
-    await user.click(screen.getByRole('button', { name: 'Delete person' }))
-    await user.click(screen.getByRole('button', { name: /^Delete$/ }))
+    await user.click(getPersonActionButton('Anna', 'delete'))
+    await user.click(getDeleteConfirmButton())
     expect(screen.queryByRole('button', { name: 'Anna' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Mia' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Olek' })).toBeInTheDocument()
@@ -786,7 +791,7 @@ describe('edit and delete people', () => {
 
     await user.click(screen.getByRole('button', { name: 'Undo' }))
     expect(
-      await screen.findByRole('heading', { name: 'Anna' }),
+      await screen.findByRole('button', { name: 'Anna' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Anna' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Mia' })).toBeInTheDocument()
@@ -794,8 +799,8 @@ describe('edit and delete people', () => {
     expect(screen.getByText(/^Exported at/)).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('Restored Anna')
 
-    await user.click(screen.getByRole('button', { name: 'Delete person' }))
-    await user.click(screen.getByRole('button', { name: /^Delete$/ }))
+    await user.click(getPersonActionButton('Anna', 'delete'))
+    await user.click(getDeleteConfirmButton())
     await user.click(screen.getByRole('button', { name: 'Mia' }))
     await user.click(screen.getByRole('button', { name: 'Add child' }))
     await user.type(screen.getByLabelText('First name'), 'Jan')
@@ -810,14 +815,14 @@ describe('edit and delete people', () => {
     await user.type(screen.getByLabelText('First name'), 'Jan')
     await user.click(screen.getByRole('button', { name: 'Create tree' }))
     await user.click(screen.getByRole('button', { name: 'Jan' }))
-    await user.click(screen.getByRole('button', { name: 'Delete person' }))
+    await user.click(getPersonActionButton('Jan', 'delete'))
     const onlyPersonDialog = screen.getByRole('alertdialog')
     expect(onlyPersonDialog).toHaveTextContent(
       'This is the only person in the tree. The tree will be empty afterwards.',
     )
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
-    await user.click(screen.getByRole('button', { name: 'Delete person' }))
-    await user.click(screen.getByRole('button', { name: /^Delete$/ }))
+    await user.click(getPersonActionButton('Jan', 'delete'))
+    await user.click(getDeleteConfirmButton())
     expect(
       await screen.findByRole('heading', {
         name: 'Your family story starts here',
@@ -861,7 +866,7 @@ describe('edit and delete people', () => {
       document.querySelector<HTMLInputElement>('input[type="file"]')!
     fireEvent.change(input, { target: { files: [makeFile(splitTree)] } })
     await user.click(await screen.findByRole('button', { name: 'mia' }))
-    await user.click(screen.getByRole('button', { name: 'Delete person' }))
+    await user.click(getPersonActionButton('mia', 'delete'))
     const dialog = screen.getByRole('alertdialog', { name: 'Delete mia?' })
     expect(dialog).toHaveTextContent(
       '2 relationships will be removed along with this person.',
@@ -874,7 +879,7 @@ describe('edit and delete people', () => {
       'Drzewo rozpadnie się na 2 oddzielne części.',
     )
     await user.click(screen.getByRole('button', { name: 'EN' }))
-    await user.click(screen.getByRole('button', { name: /^Delete$/ }))
+    await user.click(getDeleteConfirmButton())
     expect(screen.getByRole('button', { name: 'anna' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'piotr' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'olek' })).toBeInTheDocument()
@@ -903,13 +908,16 @@ describe('edit and delete people', () => {
       document.querySelector<HTMLInputElement>('input[type="file"]')!
     fireEvent.change(input, { target: { files: [makeFile(tree)] } })
     const anna = await screen.findByRole('button', { name: 'Anna' })
-    const originalLeft = Number.parseFloat(anna.style.left)
+    const annaCard = anna.closest<HTMLElement>('.person-card')!
+    const originalLeft = Number.parseFloat(annaCard.style.left)
     fireEvent.keyDown(anna, { key: 'ArrowRight', altKey: true })
     await screen.findByText('Moved Anna')
-    expect(Number.parseFloat(anna.style.left)).toBeGreaterThan(originalLeft)
+    expect(Number.parseFloat(annaCard.style.left)).toBeGreaterThan(originalLeft)
     await user.click(screen.getByRole('button', { name: 'Undo' }))
     expect(await screen.findByText('Move undone')).toBeInTheDocument()
-    const restoredAnna = screen.getByRole('button', { name: 'Anna' })
+    const restoredAnna = screen
+      .getByRole('button', { name: 'Anna' })
+      .closest<HTMLElement>('.person-card')!
     expect(Number.parseFloat(restoredAnna.style.left)).toBe(originalLeft)
     expect(screen.getByText('Loaded from file')).toBeInTheDocument()
   })
@@ -953,6 +961,7 @@ describe('edit and delete people', () => {
     fireEvent.change(input, { target: { files: [makeFile(tree)] } })
     await user.click(await screen.findByRole('button', { name: 'Person' }))
     expect(screen.queryByRole('dialog', { name: 'Move Person?' })).not.toBeInTheDocument()
+    await user.click(getPersonActionButton('Person', 'move'))
     await user.click(
       screen.getByRole('button', { name: 'Move right one place' }),
     )
@@ -972,6 +981,27 @@ function makeFile(
   })
   Object.defineProperty(file, 'text', { value: readText })
   return file
+}
+
+function getPersonActionButton(
+  name: string,
+  action: 'edit' | 'delete' | 'move',
+) {
+  const identity = screen.getByRole('button', { name })
+  const button = identity
+    .closest('.person-card')
+    ?.querySelector<HTMLButtonElement>(`.person-card__control--${action}`)
+  if (!button) throw new Error(`Missing ${action} action for ${name}`)
+  return button
+}
+
+function getDeleteConfirmButton() {
+  const dialog = screen.getByRole('alertdialog')
+  const button = Array.from(dialog.querySelectorAll('button')).find(
+    (candidate) => candidate.textContent?.trim() === 'Delete',
+  )
+  if (!button) throw new Error('Missing delete confirmation button')
+  return button
 }
 
 function within(element: HTMLElement) {

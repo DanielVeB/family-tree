@@ -50,7 +50,7 @@ function NodeActionButton({
         aria-disabled={disabled ? 'true' : undefined}
         aria-describedby={visible ? `${id}-tooltip` : undefined}
         title={tooltip}
-        tabIndex={disabled ? -1 : 0}
+        tabIndex={0}
         onMouseEnter={() => onActivate(id)}
         onMouseLeave={() => onActivate(null)}
         onFocus={() => onActivate(id)}
