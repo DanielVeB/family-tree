@@ -23,6 +23,12 @@ function getEventDescription(event: TimelineEvent, t: TFunction): string {
   })
 }
 
+function getEventIcon(type: TimelineEvent['type']): string {
+  if (type === 'birth') return '✶'
+  if (type === 'death') return '✝'
+  return '♡'
+}
+
 export default function TimelineDialog({ tree, onClose }: TimelineDialogProps) {
   const { t, i18n } = useTranslation()
   const events = useMemo(() => getTimelineEvents(tree), [tree])
@@ -73,6 +79,7 @@ export default function TimelineDialog({ tree, onClose }: TimelineDialogProps) {
         ? `${getEventDescription(event, t)}. ${formatPartialDate(event.date, i18n.language)}`
         : '',
     )
+    window.requestAnimationFrame(() => contentRef.current?.focus())
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -156,11 +163,17 @@ export default function TimelineDialog({ tree, onClose }: TimelineDialogProps) {
         {hasEvents && currentEvent ? (
           <>
             <div
+              key={`${currentEvent.type}-${currentEvent.date}-${currentIndex}`}
               ref={contentRef}
-              className="timeline-dialog__event"
+              className={`timeline-dialog__event timeline-dialog__event--${currentEvent.type}`}
               tabIndex={-1}
               aria-describedby="timeline-date"
             >
+              <span className="timeline-dialog__marker" aria-hidden="true">
+                <span className="timeline-dialog__marker-icon">
+                  {getEventIcon(currentEvent.type)}
+                </span>
+              </span>
               <p className="timeline-dialog__description">{description}</p>
               <time
                 id="timeline-date"

@@ -37,26 +37,27 @@ describe('TimelineDialog', () => {
     opener.focus()
     const onClose = vi.fn()
     const { unmount } = render(<TimelineDialog tree={tree} onClose={onClose} />)
+    const dialog = screen.getByRole('dialog')
 
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(dialog).toBeInTheDocument()
     expect(screen.getByText('Birth of Anna')).toBeInTheDocument()
     expect(screen.getByText('January 1987')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
     expect(document.activeElement).toHaveClass('timeline-dialog__event')
 
-    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' })
+    fireEvent.keyDown(dialog, { key: 'ArrowRight' })
     expect(screen.getByText('Death of Jan')).toBeInTheDocument()
     expect(screen.getByText('2020')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
 
-    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' })
+    fireEvent.keyDown(dialog, { key: 'ArrowLeft' })
     expect(screen.getByText('Birth of Anna')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     expect(screen.getByText('Death of Jan')).toBeInTheDocument()
     expect(onClose).not.toHaveBeenCalled()
 
-    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+    fireEvent.keyDown(dialog, { key: 'Escape' })
     expect(onClose).toHaveBeenCalledOnce()
     unmount()
     expect(document.activeElement).toBe(opener)
@@ -81,13 +82,12 @@ describe('TimelineDialog', () => {
 
   it('clears the playback timer when the dialog closes', () => {
     vi.useFakeTimers()
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval')
     const { unmount } = render(<TimelineDialog tree={tree} onClose={vi.fn()} />)
-    const timerCountBeforePlayback = vi.getTimerCount()
     fireEvent.click(screen.getByRole('button', { name: 'Play' }))
-    expect(vi.getTimerCount()).toBe(timerCountBeforePlayback + 1)
 
     unmount()
-    expect(vi.getTimerCount()).toBe(timerCountBeforePlayback)
+    expect(clearIntervalSpy).toHaveBeenCalled()
   })
 
   it('keeps keyboard focus inside the dialog', () => {

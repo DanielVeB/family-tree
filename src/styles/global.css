@@ -1252,6 +1252,7 @@ h1 {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   text-align: center;
+  animation: timeline-event-enter 220ms ease-out both;
 }
 
 .timeline-dialog__description {
@@ -1262,6 +1263,36 @@ h1 {
   line-height: 1.2;
   letter-spacing: -0.5px;
   overflow-wrap: anywhere;
+}
+
+.timeline-dialog__marker {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--tint-faint);
+  color: var(--oak);
+  box-shadow: 0 0 0 0 var(--timeline-glow);
+  animation: timeline-marker-pulse 900ms ease-out both;
+}
+
+.timeline-dialog__marker-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.timeline-dialog__event--birth .timeline-dialog__marker {
+  background: var(--timeline-birth);
+}
+
+.timeline-dialog__event--death .timeline-dialog__marker {
+  background: var(--timeline-death);
+}
+
+.timeline-dialog__event--marriage .timeline-dialog__marker {
+  background: var(--timeline-marriage);
 }
 
 .timeline-dialog__date {
@@ -1297,6 +1328,29 @@ h1 {
   margin: 0 0 24px;
   color: var(--muted);
   line-height: 1.5;
+}
+
+@keyframes timeline-event-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes timeline-marker-pulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--timeline-glow);
+  }
+  65% {
+    box-shadow: 0 0 0 8px rgba(153, 103, 54, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(153, 103, 54, 0);
+  }
 }
 
 .connection-option__hint {
@@ -1346,7 +1400,9 @@ h1 {
 
 @media (prefers-reduced-motion: reduce) {
   .node-action-button,
-  .node-move-popover {
+  .node-move-popover,
+  .timeline-dialog__event,
+  .timeline-dialog__marker {
     animation: none;
   }
 }
