@@ -382,6 +382,28 @@ h1 {
   vector-effect: non-scaling-stroke;
 }
 
+.tree-lines .marriage-date-label {
+  fill: var(--muted);
+  font-size: 14px;
+  paint-order: stroke;
+  stroke: var(--cream);
+  stroke-linejoin: round;
+  stroke-width: 6px;
+}
+
+.wedding-date-chooser__partners {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wedding-date-chooser__partners .button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+}
+
 .tree-lines .tree-line-group--selected path {
   stroke: var(--oak);
   stroke-width: 2px;

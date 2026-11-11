@@ -112,6 +112,7 @@ const childrenMap: Record<string, ReactNode> = {
   'add-sibling-right': '⇄',
   'add-partner-left': '♥',
   'add-partner-right': '♥',
+  'wedding-date': '▦',
   edit: '✎',
   delete: '⌫',
   move: '✦',
@@ -124,7 +125,9 @@ interface NodeActionsProps {
   cardWidth: number
   cardHeight: number
   selectedHasTwoParents: boolean
+  hasPartners: boolean
   onAddRelative: (kind: RelativeKind, side?: 'left' | 'right') => void
+  onWeddingDate: () => void
 }
 
 export function NodeActions({
@@ -134,7 +137,9 @@ export function NodeActions({
   cardWidth,
   cardHeight,
   selectedHasTwoParents,
+  hasPartners,
   onAddRelative,
+  onWeddingDate,
 }: NodeActionsProps) {
   const { t } = useTranslation()
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
@@ -254,6 +259,26 @@ export function NodeActions({
           </div>
         )
       })}
+      {hasPartners && (
+        <div
+          className="node-action-button-shell"
+          style={{
+            left: cardLeft + cardWidth - actionSize,
+            top: cardTop - gap - actionSize,
+          }}
+        >
+          <NodeActionButton
+            id="wedding-date"
+            tooltip={t('weddingDate.manage')}
+            placement="top"
+            visible={activeTooltip === 'wedding-date'}
+            onActivate={(value) =>
+              setActiveTooltip(value === 'wedding-date' ? value : null)
+            }
+            onClick={onWeddingDate}
+          />
+        </div>
+      )}
     </div>
   )
 }

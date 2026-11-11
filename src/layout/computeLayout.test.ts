@@ -140,6 +140,68 @@ describe('computeLayout', () => {
     ).toHaveLength(1)
   })
 
+  it('reserves space for and positions a wedding-date label between partners', () => {
+    const layout = computeLayout(
+      tree(
+        ['anna', 'jan'],
+        [
+          {
+            from: 'anna',
+            to: 'jan',
+            type: 'marriage',
+            dateOfMarriage: '2001-06-23',
+          },
+        ],
+      ),
+    )
+    const line = layout.edgePaths[0]!
+    const partnerGap = layout.positions.jan!.x - layout.positions.anna!.x - 200
+    expect(partnerGap).toBe(LAYOUT_SPACING.datedPartnerGap)
+    expect(line.dateLabelPosition).toEqual({
+      x: (layout.positions.anna!.x + 200 + layout.positions.jan!.x) / 2,
+      y: layout.positions.anna!.y + LAYOUT_SPACING.cardHeight / 2,
+    })
+    expect(
+      computeLayout(
+        tree(
+          ['anna', 'jan'],
+          [
+            {
+              from: 'anna',
+              to: 'jan',
+              type: 'marriage',
+              dateOfMarriage: '2001-06-23',
+            },
+          ],
+        ),
+      ),
+    ).toEqual(layout)
+  })
+
+  it('places a cross-layer wedding-date label on its clear routing channel', () => {
+    const layout = computeLayout(
+      tree(
+        ['parent', 'child'],
+        [
+          { from: 'parent', to: 'child', type: 'child' },
+          {
+            from: 'parent',
+            to: 'child',
+            type: 'marriage',
+            dateOfMarriage: '2001',
+          },
+        ],
+      ),
+    )
+    const line = layout.edgePaths.find(({ edge }) => edge.type === 'marriage')!
+    const parent = layout.positions.parent!
+    const child = layout.positions.child!
+    expect(line.dateLabelPosition?.y).toBeGreaterThan(
+      parent.y + LAYOUT_SPACING.cardHeight,
+    )
+    expect(line.dateLabelPosition?.y).toBeLessThan(child.y)
+  })
+
   it('places parents above children with a parent-to-child path', () => {
     const layout = computeLayout(
       tree(

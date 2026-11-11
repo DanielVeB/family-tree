@@ -76,6 +76,7 @@ interface TreeEdge {
   from: string;
   to: string;
   type: "child" | "sibling" | "marriage";
+  dateOfMarriage?: PartialDate;
 }
 
 interface FamilyTree {
@@ -97,6 +98,7 @@ Rules:
 - First names are required, trimmed, and 1–100 characters. Last names are optional, trimmed, and 0–100 characters.
 - Gender, date of birth, and date of death are optional. Partial dates use `YYYY`, `YYYY-MM`, or `YYYY-MM-DD` with valid calendar values. Empty values are omitted, and import never fills missing fields.
 - Edge endpoints must exist, self-edges and duplicate edges are invalid, and child edges must not form ancestry cycles.
+- Marriage edges may have an optional `dateOfMarriage` partial date; this field is invalid on other relationship types, omitted when empty, and never filled in on import.
 - Relation types are declared in one place with the schema in `src/model/`; extend this definition alongside its UI label.
 - Zod schemas preserve unknown node, `data`, edge, and top-level fields for forward compatibility.
 - `metaData.layer` and `metaData.order` are required nonnegative integers. Levels start at 0, and order starts at 0 from left to right within each part's level. Import repairs level gaps and duplicate/gapped orders; files without either field are rejected.
@@ -143,6 +145,7 @@ In scope:
 11. **Start empty or load sample:** a "Try with sample data" action that loads fake data bundled with the app.
 12. **PWA:** installable and works offline after the first load.
 13. **Language switcher:** English and Polish, with automatic first-visit detection and a persistent manual choice (see section 7a).
+14. **Wedding date:** an optional partial date on a marriage connection, editable when adding a partner or from either partner's actions.
 
 Out of scope for v1 (do not build unless asked): accounts, cloud sync, collaboration, photo upload, GEDCOM import/export, printing/PDF, search across huge trees, languages other than English and Polish, dark mode.
 
@@ -224,6 +227,7 @@ Out of scope for v1 (do not build unless asked): accounts, cloud sync, collabora
 - Geometric invariants: cards do not overlap; lines attach only at their related card edges; unrelated routes do not overlap or run parallel closer than 8px; every relationship is represented once; the same tree produces the same layout.
 
 Person cards show a one-line years caption in the design-system caption style when birth or death years are known. The shared person form includes gender and optional partial-date groups. Gender exceptions are configured in `src/config/gender-names.json`, using the `maleNamesEndingInA` and `femaleNamesNotEndingInA` lists.
+Marriage dates appear beside their connector in the active locale; layout reserves space for the label without changing person card dimensions.
 
 Principles:
 - Keep `model/` pure TypeScript with **no React imports**. All add/delete/edit logic lives here and is unit-tested.

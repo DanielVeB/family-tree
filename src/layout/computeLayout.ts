@@ -17,6 +17,7 @@ export interface LayoutLine {
   path: string
   people: string[]
   dots: Point[]
+  dateLabelPosition?: Point
 }
 
 export interface LayoutResult {
@@ -99,6 +100,14 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
           ...line,
           path: shiftPathHorizontally(line.path, offset),
           dots: line.dots.map((dot) => ({ ...dot, x: dot.x + offset })),
+          ...(line.dateLabelPosition
+            ? {
+                dateLabelPosition: {
+                  ...line.dateLabelPosition,
+                  x: line.dateLabelPosition.x + offset,
+                },
+              }
+            : {}),
         })),
       )
       offset += partLayout.width + LAYOUT_SPACING.partGap
@@ -212,6 +221,15 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
       nodeIds.has(edge.from) &&
       nodeIds.has(edge.to),
   )
+  const getPartnerGap = (first: string, second: string) =>
+    marriages.some(
+      (edge) =>
+        ((edge.from === first && edge.to === second) ||
+          (edge.from === second && edge.to === first)) &&
+        edge.dateOfMarriage,
+    )
+      ? LAYOUT_SPACING.datedPartnerGap
+      : LAYOUT_SPACING.partnerGap
   const explicitSiblings = tree.edges.filter((edge) => edge.type === 'sibling')
   const areSiblingNeighbors = (first: string, second: string): boolean => {
     const firstParents = [...(parentByPerson.get(first) ?? [])].sort()
@@ -285,7 +303,7 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
         const first = orderedMembers[index]!
         const second = orderedMembers[index + 1]!
         width += (partnersByPerson.get(first) ?? []).includes(second)
-          ? LAYOUT_SPACING.partnerGap
+          ? getPartnerGap(first, second)
           : LAYOUT_SPACING.siblingGap
       }
       const desiredX = parentCenters.length
@@ -303,7 +321,7 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
                 (edge.from === firstMember && edge.to === nextMember) ||
                 (edge.to === firstMember && edge.from === nextMember),
             )
-            ? LAYOUT_SPACING.partnerGap
+            ? getPartnerGap(firstMember, nextMember)
             : areSiblingNeighbors(firstMember, nextMember)
               ? LAYOUT_SPACING.siblingGap
               : LAYOUT_SPACING.blockGap
@@ -321,7 +339,7 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
           (edge.from === previousId && edge.to === nextId) ||
           (edge.to === previousId && edge.from === nextId),
       )
-        ? LAYOUT_SPACING.partnerGap
+        ? getPartnerGap(previousId!, nextId!)
         : previousId && nextId && areSiblingNeighbors(previousId, nextId)
           ? LAYOUT_SPACING.siblingGap
           : LAYOUT_SPACING.blockGap
@@ -355,7 +373,7 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
           cardWidth +
           (nextPerson
             ? adjacentPartner
-              ? LAYOUT_SPACING.partnerGap
+              ? getPartnerGap(personId, nextPerson)
               : LAYOUT_SPACING.siblingGap
             : 0)
       }
@@ -432,12 +450,18 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
       cardWidth,
       familyMarriage,
       familyMarriage ? marriageRouting.lanes.get(familyMarriage) : undefined,
+      familyMarriage
+        ? getPartnerGap(familyMarriage.from, familyMarriage.to)
+        : LAYOUT_SPACING.partnerGap,
     )
     edgePaths.push({
       edge: representative,
       path: familyPath.path,
       people: [...family.parents, ...family.children],
       dots: familyPath.dots,
+      ...(familyPath.dateLabelPosition
+        ? { dateLabelPosition: familyPath.dateLabelPosition }
+        : {}),
     })
   }
 
@@ -449,11 +473,20 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     if (from.y !== to.y) {
       const upperId = from.y < to.y ? edge.from : edge.to
       const lowerId = upperId === edge.from ? edge.to : edge.from
+      const crossLayerPath = getCrossLayerPath(
+        upperId,
+        lowerId,
+        positions,
+        cardWidth,
+      )
       edgePaths.push({
         edge,
-        path: getCrossLayerPath(upperId, lowerId, positions, cardWidth),
+        path: crossLayerPath.path,
         people: [edge.from, edge.to],
         dots: [],
+        ...(edge.dateOfMarriage
+          ? { dateLabelPosition: crossLayerPath.dateLabelPosition }
+          : {}),
       })
       consumed.add(edge)
       continue
@@ -474,7 +507,7 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
         point.x + cardWidth > left.x + cardWidth,
     )
     const adjacent =
-      right.x - (left.x + cardWidth) <= LAYOUT_SPACING.partnerGap &&
+      right.x - (left.x + cardWidth) <= getPartnerGap(leftId, rightId) &&
       !hasInterveningCard
     const lane = marriageRouting.lanes.get(edge) ?? 0
     const routeY =
@@ -493,6 +526,14 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
         hasSharedChild && adjacent
           ? [{ x: centerX, y: left.y + CARD_HEIGHT / 2 }]
           : [],
+      ...(edge.dateOfMarriage
+        ? {
+            dateLabelPosition: {
+              x: centerX,
+              y: adjacent ? left.y + CARD_HEIGHT / 2 : routeY,
+            },
+          }
+        : {}),
     })
   }
 
@@ -514,33 +555,12 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
     const lowerId = upperId === edge.from ? edge.to : edge.from
     edgePaths.push({
       edge,
-      path: getCrossLayerPath(upperId, lowerId, positions, cardWidth),
+      path: getCrossLayerPath(upperId, lowerId, positions, cardWidth).path,
       people: [edge.from, edge.to],
       dots: [],
     })
     consumed.add(edge)
   }
-  for (const edge of tree.edges) {
-    if (
-      edge.type === 'child' ||
-      edge.type === 'sibling' ||
-      edge.type === 'marriage' ||
-      consumed.has(edge)
-    ) {
-      continue
-    }
-    if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) continue
-    const from = positions[edge.from]
-    const to = positions[edge.to]
-    if (!from || !to) continue
-    edgePaths.push({
-      edge,
-      path: getUnusualEdgePath(from, to, cardWidth),
-      people: [edge.from, edge.to],
-      dots: [],
-    })
-  }
-
   const maxGeneration = Math.max(0, ...groups.map((group) => group.generation))
   const cardCenters = Object.fromEntries(
     Object.entries(positions).map(([id, point]) => [
@@ -857,7 +877,10 @@ function assignMarriageLanes(
     if (!from || !to || from.y !== to.y) continue
     const left = from.x <= to.x ? from : to
     const right = left === from ? to : from
-    if (right.x - (left.x + cardWidth) <= LAYOUT_SPACING.partnerGap) continue
+    const gap = edge.dateOfMarriage
+      ? LAYOUT_SPACING.datedPartnerGap
+      : LAYOUT_SPACING.partnerGap
+    if (right.x - (left.x + cardWidth) <= gap) continue
     const generation = groupByPerson.get(edge.from)?.generation ?? 0
     const intervals = byGeneration.get(generation) ?? []
     intervals.push({
@@ -904,7 +927,10 @@ function assignMarriageLanes(
     if (!from || !to) continue
     const left = from.x <= to.x ? from : to
     const right = left === from ? to : from
-    if (right.x - (left.x + cardWidth) <= LAYOUT_SPACING.partnerGap) continue
+    const gap = marriage.dateOfMarriage
+      ? LAYOUT_SPACING.datedPartnerGap
+      : LAYOUT_SPACING.partnerGap
+    if (right.x - (left.x + cardWidth) <= gap) continue
     const lane = family.lane + 1
     lanes.set(marriage, lane)
     laneCounts.set(
@@ -921,7 +947,8 @@ function getFamilyPath(
   cardWidth: number,
   marriage?: TreeEdge,
   marriageLane?: number,
-): { path: string; dots: Point[] } {
+  partnerGap: number = LAYOUT_SPACING.partnerGap,
+): { path: string; dots: Point[]; dateLabelPosition?: Point } {
   const parentPoints = family.parents
     .map((id) => positions[id])
     .filter((point): point is Point => Boolean(point))
@@ -947,6 +974,7 @@ function getFamilyPath(
   const commands: string[] = []
   const dots: Point[] = []
   const sourceCenters: number[] = []
+  let dateLabelPosition: Point | undefined
   const marriedParents =
     marriage && family.parents.length === 2
       ? family.parents
@@ -971,8 +999,13 @@ function getFamilyPath(
       positions,
       cardWidth,
     )
-    const adjacent =
-      right!.x - (left!.x + cardWidth) <= LAYOUT_SPACING.partnerGap
+    const adjacent = right!.x - (left!.x + cardWidth) <= partnerGap
+    if (marriage?.dateOfMarriage) {
+      dateLabelPosition = {
+        x: centerX,
+        y: adjacent ? centerY : routeY,
+      }
+    }
     commands.push(
       adjacent
         ? `M ${left!.x + cardWidth} ${centerY} H ${right!.x}`
@@ -1036,7 +1069,11 @@ function getFamilyPath(
           ]),
     )
   }
-  return { path: commands.join(' '), dots }
+  return {
+    path: commands.join(' '),
+    dots,
+    ...(dateLabelPosition ? { dateLabelPosition } : {}),
+  }
 }
 
 function addSiblingBrackets(
@@ -1129,22 +1166,12 @@ function getConnectedSiblingMembers(
   return [...members]
 }
 
-function getUnusualEdgePath(from: Point, to: Point, cardWidth: number): string {
-  const left = from.x <= to.x ? from : to
-  const right = left === from ? to : from
-  if (from.y === to.y) {
-    return `M ${left.x + cardWidth} ${left.y + CARD_HEIGHT / 2} H ${right.x}`
-  }
-  const routeY = Math.max(from.y, to.y) + CARD_HEIGHT + LAYOUT_SPACING.lineInset
-  return `M ${from.x + cardWidth / 2} ${from.y + CARD_HEIGHT} V ${routeY} H ${to.x + cardWidth / 2} V ${to.y + CARD_HEIGHT}`
-}
-
 function getCrossLayerPath(
   upperId: string,
   lowerId: string,
   positions: Record<string, Point>,
   cardWidth: number,
-): string {
+): { path: string; dateLabelPosition: Point } {
   const upper = positions[upperId]!
   const lower = positions[lowerId]!
   const sourceX = upper.x + cardWidth / 2
@@ -1166,7 +1193,13 @@ function getCrossLayerPath(
     positions,
     cardWidth,
   )
-  return `M ${sourceX} ${upper.y + CARD_HEIGHT} V ${routeY} H ${channelX} V ${lowerRouteY} H ${targetX} V ${lower.y}`
+  return {
+    path: `M ${sourceX} ${upper.y + CARD_HEIGHT} V ${routeY} H ${channelX} V ${lowerRouteY} H ${targetX} V ${lower.y}`,
+    dateLabelPosition: {
+      x: channelX,
+      y: (routeY + lowerRouteY) / 2,
+    },
+  }
 }
 
 function samePair(

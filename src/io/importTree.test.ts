@@ -29,6 +29,58 @@ describe('parseTreeFile', () => {
     expect(parsed.tree.nodes[0]!.metaData.futurePosition).toBe('preserved')
   })
 
+  it('round-trips optional wedding dates and rejects them on other edge types', () => {
+    const weddingDateFile = `${JSON.stringify(
+      {
+        version: 1,
+        nodes: [
+          {
+            id: 'anna',
+            data: { firstName: 'Anna' },
+            metaData: { layer: 0, order: 0 },
+          },
+          {
+            id: 'jan',
+            data: { firstName: 'Jan' },
+            metaData: { layer: 0, order: 1 },
+          },
+        ],
+        edges: [
+          {
+            from: 'anna',
+            to: 'jan',
+            type: 'marriage',
+            dateOfMarriage: '2001-06-23',
+            futureEdgeField: 'preserved',
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`
+    const parsed = parseTreeFile(weddingDateFile)
+
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(serializeTree(parsed.tree)).toBe(weddingDateFile)
+    const legacyTree = JSON.parse(weddingDateFile) as {
+      edges: Array<Record<string, unknown>>
+    }
+    delete legacyTree.edges[0]!.dateOfMarriage
+    const legacyMarriageFile = `${JSON.stringify(legacyTree, null, 2)}\n`
+    const parsedLegacyMarriage = parseTreeFile(legacyMarriageFile)
+    expect(parsedLegacyMarriage.ok).toBe(true)
+    if (parsedLegacyMarriage.ok) {
+      expect(serializeTree(parsedLegacyMarriage.tree)).toBe(legacyMarriageFile)
+    }
+    expect(
+      parseTreeFile(weddingDateFile.replace('2001-06-23', '2001-02-30')).ok,
+    ).toBe(false)
+    expect(
+      parseTreeFile(weddingDateFile.replace('"marriage"', '"sibling"')).ok,
+    ).toBe(false)
+  })
+
   it('repairs gaps and duplicate positions per part while preserving metadata', () => {
     const parsed = parseTreeFile(
       JSON.stringify({

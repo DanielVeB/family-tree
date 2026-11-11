@@ -1,6 +1,7 @@
 export const LAYOUT_SPACING = {
   cardHeight: 136,
   partnerGap: 32,
+  datedPartnerGap: 112,
   siblingGap: 24,
   blockGap: 64,
   partGap: 96,

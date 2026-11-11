@@ -6,6 +6,7 @@ import {
   getDisplayName,
   TreeOperationError,
   TreeSchema,
+  updateMarriageDate,
 } from './tree'
 
 describe('family tree operations', () => {
@@ -193,6 +194,106 @@ describe('family tree operations', () => {
         ],
       }).success,
     ).toBe(true)
+  })
+
+  it('stores, validates, updates, and clears optional marriage dates', () => {
+    const tree = {
+      version: 1 as const,
+      nodes: [
+        {
+          id: 'a',
+          data: { firstName: 'Anna' },
+          metaData: { layer: 0, order: 0 },
+        },
+        {
+          id: 'b',
+          data: { firstName: 'Jan' },
+          metaData: { layer: 0, order: 1 },
+        },
+      ],
+      edges: [
+        {
+          from: 'a',
+          to: 'b',
+          type: 'marriage' as const,
+          futureField: 'preserved',
+        },
+      ],
+    }
+
+    expect(
+      TreeSchema.safeParse({
+        ...tree,
+        edges: [{ ...tree.edges[0], dateOfMarriage: '2001-06-23' }],
+      }).success,
+    ).toBe(true)
+    expect(
+      TreeSchema.safeParse({
+        ...tree,
+        edges: [{ ...tree.edges[0], dateOfMarriage: '2001-02-30' }],
+      }).success,
+    ).toBe(false)
+    expect(
+      TreeSchema.safeParse({
+        ...tree,
+        edges: [
+          { from: 'a', to: 'b', type: 'sibling', dateOfMarriage: '2001' },
+        ],
+      }).success,
+    ).toBe(false)
+
+    const dated = updateMarriageDate(tree, 'b', 'a', '2001-06-23')
+    expect(dated.edges[0]).toEqual({
+      from: 'a',
+      to: 'b',
+      type: 'marriage',
+      futureField: 'preserved',
+      dateOfMarriage: '2001-06-23',
+    })
+
+    expect(updateMarriageDate(dated, 'a', 'b', '2001-06-23')).toBe(dated)
+    const cleared = updateMarriageDate(dated, 'a', 'b', undefined)
+    expect(cleared.edges[0]).toEqual(tree.edges[0])
+    expect(() => updateMarriageDate(tree, 'a', 'b', '2001-02-30')).toThrowError(
+      new TreeOperationError('invalidDate'),
+    )
+    expect(() =>
+      updateMarriageDate(tree, 'a', 'missing', undefined),
+    ).toThrowError(new TreeOperationError('unknownMarriage'))
+  })
+
+  it('stores an optional wedding date when adding a partner', () => {
+    const tree = addFirstPerson(createEmptyTree(), { firstName: 'Anna' })
+    const updated = addRelative(
+      tree,
+      tree.nodes[0]!.id,
+      'partner',
+      { firstName: 'Jan' },
+      undefined,
+      undefined,
+      undefined,
+      '2001',
+    )
+    expect(updated.edges).toEqual([
+      {
+        from: tree.nodes[0]!.id,
+        to: updated.nodes[1]!.id,
+        type: 'marriage',
+        dateOfMarriage: '2001',
+      },
+    ])
+    expect(() =>
+      addRelative(
+        tree,
+        tree.nodes[0]!.id,
+        'partner',
+        { firstName: 'Marek' },
+        undefined,
+        undefined,
+        undefined,
+        '2001-02-30',
+      ),
+    ).toThrowError(new TreeOperationError('invalidDate'))
   })
 
   it('keeps new relatives at stored levels and shifts the part when adding a top parent', () => {

@@ -127,3 +127,19 @@ export function formatDateYears(
   if (deathYear) return diedLabel(deathYear)
   return ''
 }
+
+export function formatPartialDate(value: string, locale: string): string {
+  if (!isValidPartialDate(value)) return ''
+  const [yearText = '', monthText, dayText] = value.split('-')
+  const year = Number(yearText)
+  if (!monthText) return yearText
+  const month = Number(monthText)
+  const day = dayText ? Number(dayText) : undefined
+  return new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    ...(day
+      ? { month: 'short', day: 'numeric' as const }
+      : { month: 'long' as const }),
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, month - 1, day ?? 1)))
+}

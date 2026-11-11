@@ -18,6 +18,7 @@ import {
 } from '../layout/computeLayout'
 import {
   formatDateYears,
+  formatPartialDate,
   buildPartialDate,
   parsePartialDate,
   validateDateOrder,
@@ -33,6 +34,7 @@ import {
   getConnectionQuestions,
   getDefaultConnectionAnswers,
   getDisplayName,
+  getPartnersOf,
   getParentCount,
   moveOne,
   TreeOperationError,
@@ -45,6 +47,7 @@ import {
   type RelativeKind,
   type MoveRequest,
   type Gender,
+  type TreeEdge,
 } from '../model/tree'
 
 interface TreeViewProps {
@@ -58,8 +61,14 @@ interface TreeViewProps {
     answers: ConnectionAnswers,
     centers: Record<string, number>,
     side?: 'left' | 'right',
+    dateOfMarriage?: string,
   ) => void
   onUpdatePerson: (personId: string, name: PersonName) => boolean
+  onUpdateMarriageDate: (
+    firstPersonId: string,
+    secondPersonId: string,
+    dateOfMarriage: string | undefined,
+  ) => boolean
   onDeletePerson: (personId: string) => void
   onMovePerson: (tree: FamilyTree, personId: string) => void
 }
@@ -94,10 +103,11 @@ export default function TreeView({
   onSelect,
   onAddRelative,
   onUpdatePerson,
+  onUpdateMarriageDate,
   onDeletePerson,
   onMovePerson,
 }: TreeViewProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [cardWidth, setCardWidth] = useState(
     window.innerWidth < 640 ? 160 : 200,
   )
@@ -147,6 +157,13 @@ export default function TreeView({
   const [drag, setDrag] = useState<DragPreview | null>(null)
   const [heldPersonId, setHeldPersonId] = useState<string | null>(null)
   const [relativeForm, setRelativeForm] = useState<RelativeKind | null>(null)
+  const [weddingDateChooser, setWeddingDateChooser] = useState(false)
+  const [editingMarriage, setEditingMarriage] = useState<TreeEdge | null>(null)
+  const [weddingDateFields, setWeddingDateFields] = useState<PartialDateParts>(
+    emptyPartialDateParts(),
+  )
+  const [weddingDateError, setWeddingDateError] =
+    useState<DateValidationError | null>(null)
   const [relativeSide, setRelativeSide] = useState<
     'left' | 'right' | undefined
   >()
@@ -175,9 +192,25 @@ export default function TreeView({
   const [moveAnnouncement, setMoveAnnouncement] = useState('')
   const connectionChoiceRef = useRef<HTMLInputElement>(null)
   const relativeFirstNameRef = useRef<HTMLInputElement>(null)
+  const weddingDateDayRef = useRef<HTMLInputElement>(null)
+  const weddingDateChooserRef = useRef<HTMLButtonElement>(null)
   const formWasOpenRef = useRef(false)
 
   const selectedPerson = tree.nodes.find((node) => node.id === selectedId)
+  const selectedPartnerIds = selectedId ? getPartnersOf(tree, selectedId) : []
+  const selectedPartnerEdges = tree.edges.filter(
+    (edge) =>
+      edge.type === 'marriage' &&
+      selectedId !== null &&
+      (edge.from === selectedId || edge.to === selectedId),
+  )
+  const editingPartner = editingMarriage
+    ? tree.nodes.find(
+        ({ id }) =>
+          id !== selectedId &&
+          (id === editingMarriage.from || id === editingMarriage.to),
+      )
+    : undefined
   const selectedName = selectedPerson ? getDisplayName(selectedPerson) : ''
   const selectedGender =
     genderMode === 'automatic' ? guessGender(firstName) : manualGender
@@ -463,10 +496,17 @@ export default function TreeView({
     if (editing) relativeFirstNameRef.current?.focus()
   }, [editing])
 
+  useEffect(() => {
+    if (editingMarriage) weddingDateDayRef.current?.focus()
+    else if (weddingDateChooser) weddingDateChooserRef.current?.focus()
+  }, [editingMarriage, weddingDateChooser])
+
   const closeDetail = useCallback(() => {
     const closingId = selectedId
     setRelativeForm(null)
     setEditing(false)
+    setWeddingDateChooser(false)
+    setEditingMarriage(null)
     setDeletePreview(null)
     onSelect(null)
     if (closingId) {
@@ -498,6 +538,15 @@ export default function TreeView({
         return
       }
       if (deletePreview) return
+      if (editingMarriage) {
+        setEditingMarriage(null)
+        setWeddingDateError(null)
+        return
+      }
+      if (weddingDateChooser) {
+        setWeddingDateChooser(false)
+        return
+      }
       if (relativeForm) {
         setRelativeForm(null)
         setFormError('')
@@ -519,6 +568,8 @@ export default function TreeView({
   }, [
     relativeForm,
     editing,
+    editingMarriage,
+    weddingDateChooser,
     deletePreview,
     selectedId,
     closeDetail,
@@ -600,6 +651,7 @@ export default function TreeView({
       return
     }
     if (!validatePersonDates()) return
+    if (relativeForm === 'partner' && !validateWeddingDate()) return
     try {
       onAddRelative(
         selectedId,
@@ -617,6 +669,9 @@ export default function TreeView({
           ]),
         ),
         relativeSide,
+        relativeForm === 'partner'
+          ? buildPartialDate(weddingDateFields)
+          : undefined,
       )
     } catch (error) {
       if (!(error instanceof TreeOperationError)) throw error
@@ -635,6 +690,8 @@ export default function TreeView({
     setConnectionError(false)
     setConnectionAnswers({ checked: {}, choice: null })
     setRelativeForm(null)
+    setWeddingDateFields(emptyPartialDateParts())
+    setWeddingDateError(null)
   }
 
   function openRelativeForm(kind: RelativeKind, side?: 'left' | 'right') {
@@ -652,6 +709,10 @@ export default function TreeView({
     setManualGender(undefined)
     setDateFields(emptyPersonDateFields())
     setDateError(null)
+    setWeddingDateFields(emptyPartialDateParts())
+    setWeddingDateError(null)
+    setWeddingDateChooser(false)
+    setEditingMarriage(null)
     setEditing(false)
     setEditAnnounced(false)
     setRelativeSide(side)
@@ -704,6 +765,53 @@ export default function TreeView({
       return
     }
     setDateError((current) => (current?.group === group ? null : current))
+  }
+
+  function validateWeddingDate(): boolean {
+    const code = validatePartialDate(weddingDateFields, new Date())
+    setWeddingDateError(code ?? null)
+    return !code
+  }
+
+  function validateWeddingDateField() {
+    const code = validatePartialDate(weddingDateFields, new Date())
+    setWeddingDateError(code ?? null)
+  }
+
+  function openWeddingDateEditor(partnerId: string) {
+    const edge = selectedPartnerEdges.find(
+      (candidate) =>
+        (candidate.from === selectedId && candidate.to === partnerId) ||
+        (candidate.to === selectedId && candidate.from === partnerId),
+    )
+    if (!edge || edge.type !== 'marriage') {
+      throw new TreeOperationError('unknownMarriage')
+    }
+    setWeddingDateFields(parsePartialDate(edge.dateOfMarriage))
+    setWeddingDateError(null)
+    setWeddingDateChooser(false)
+    setEditingMarriage(edge)
+  }
+
+  function submitWeddingDate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!editingMarriage || !selectedId || !validateWeddingDate()) return
+    const partnerId =
+      editingMarriage.from === selectedId
+        ? editingMarriage.to
+        : editingMarriage.from
+    onUpdateMarriageDate(
+      selectedId,
+      partnerId,
+      buildPartialDate(weddingDateFields),
+    )
+    setEditingMarriage(null)
+    setWeddingDateError(null)
+    if (selectedId) {
+      window.requestAnimationFrame(() =>
+        focusPersonControl(selectedId, 'identity'),
+      )
+    }
   }
 
   const pointerPosition = (event: ReactPointerEvent<HTMLDivElement>) => ({
@@ -943,7 +1051,7 @@ export default function TreeView({
 
   return (
     <div
-      className={`tree-workspace${relativeForm || editing ? ' tree-workspace--detail-open' : ''}`}
+      className={`tree-workspace${relativeForm || editing || weddingDateChooser || editingMarriage ? ' tree-workspace--detail-open' : ''}`}
     >
       <div
         ref={canvasRef}
@@ -996,29 +1104,47 @@ export default function TreeView({
             height={layout.height}
             aria-hidden="true"
           >
-            {layout.edgePaths.map(({ edge, path, people, dots }, index) => {
-              const highlighted =
-                selectedId !== null && people.includes(selectedId)
-              const key = `${edge.type}-${edge.from}-${edge.to}-${index}`
-              return (
-                <g
-                  key={key}
-                  className={
-                    highlighted ? 'tree-line-group--selected' : undefined
-                  }
-                >
-                  <path d={path} />
-                  {dots.map((dot, dotIndex) => (
-                    <circle
-                      key={`${key}-dot-${dotIndex}`}
-                      cx={dot.x}
-                      cy={dot.y}
-                      r="3"
-                    />
-                  ))}
-                </g>
-              )
-            })}
+            {layout.edgePaths.map(
+              ({ edge, path, people, dots, dateLabelPosition }, index) => {
+                const highlighted =
+                  selectedId !== null && people.includes(selectedId)
+                const key = `${edge.type}-${edge.from}-${edge.to}-${index}`
+                return (
+                  <g
+                    key={key}
+                    className={
+                      highlighted ? 'tree-line-group--selected' : undefined
+                    }
+                  >
+                    <path d={path} />
+                    {dots.map((dot, dotIndex) => (
+                      <circle
+                        key={`${key}-dot-${dotIndex}`}
+                        cx={dot.x}
+                        cy={dot.y}
+                        r="3"
+                      />
+                    ))}
+                    {edge.type === 'marriage' &&
+                      edge.dateOfMarriage &&
+                      dateLabelPosition && (
+                        <text
+                          className="marriage-date-label"
+                          x={dateLabelPosition.x}
+                          y={dateLabelPosition.y}
+                          textAnchor="middle"
+                          aria-hidden="true"
+                        >
+                          {formatPartialDate(
+                            edge.dateOfMarriage,
+                            i18n.resolvedLanguage ?? 'en',
+                          )}
+                        </text>
+                      )}
+                  </g>
+                )
+              },
+            )}
           </svg>
           {tree.nodes.map((person) => {
             const originalPoint = layout.positions[person.id]
@@ -1048,6 +1174,8 @@ export default function TreeView({
                     onEdit={() => {
                       onSelect(person.id)
                       setRelativeForm(null)
+                      setWeddingDateChooser(false)
+                      setEditingMarriage(null)
                       setFirstName(person.data.firstName)
                       setLastName(person.data.lastName ?? '')
                       setGenderMode(
@@ -1085,6 +1213,8 @@ export default function TreeView({
                   }
                   setRelativeForm(null)
                   setEditing(false)
+                  setWeddingDateChooser(false)
+                  setEditingMarriage(null)
                   setDeletePreview(null)
                   setFirstName('')
                   setLastName('')
@@ -1163,6 +1293,8 @@ export default function TreeView({
       {selectedPerson &&
         !relativeForm &&
         !editing &&
+        !weddingDateChooser &&
+        !editingMarriage &&
         !deletePreview &&
         !drag && (
           <>
@@ -1179,7 +1311,9 @@ export default function TreeView({
               cardWidth={cardWidth * viewport.scale}
               cardHeight={LAYOUT_SPACING.cardHeight * viewport.scale}
               selectedHasTwoParents={selectedHasTwoParents}
+              hasPartners={selectedPartnerIds.length > 0}
               onAddRelative={openRelativeForm}
+              onWeddingDate={() => setWeddingDateChooser(true)}
             />
             <span className="visually-hidden" aria-live="polite">
               {moveAnnouncement}
@@ -1189,121 +1323,208 @@ export default function TreeView({
             </span>
           </>
         )}
-      {selectedPerson && (relativeForm || editing) && (
-        <aside className="panel detail-panel" aria-label={selectedName}>
-          <button
-            type="button"
-            className="icon-pill detail-panel__close"
-            aria-label={t('close')}
-            onClick={closeDetail}
-          >
-            ×
-          </button>
-          {relativeForm ? (
-            <RelativeForm
-              relation={relativeForm}
-              name={selectedName}
-              firstName={firstName}
-              lastName={lastName}
-              gender={selectedGender}
-              genderMode={genderMode}
-              dateFields={dateFields}
-              dateError={dateError}
-              onGender={(gender) => {
-                setGenderMode('manual')
-                setManualGender(gender)
-              }}
-              onDateField={(group, field, value) => {
-                setDateFields((current) => ({
-                  ...current,
-                  [group]: { ...current[group], [field]: value },
-                }))
-                setDateError((current) =>
-                  current?.group === group || current?.code === 'errorOrder'
-                    ? null
-                    : current,
-                )
-              }}
-              onDateBlur={validateDateField}
-              error={formError}
-              errorField={formErrorField}
-              tree={tree}
-              questions={connectionQuestions}
-              answers={connectionAnswers}
-              connectionError={connectionError}
-              choiceRef={connectionChoiceRef}
-              onAnswers={(answers) => {
-                setConnectionAnswers(answers)
-                setConnectionError(
-                  answers.choice === null ? connectionError : false,
-                )
-                setFormError('')
-              }}
-              firstNameRef={relativeFirstNameRef}
-              onFirstName={(value) => {
-                setFirstName(value)
-                setFormError('')
-                setFormErrorField(null)
-              }}
-              onLastName={(value) => {
-                setLastName(value)
-                setFormError('')
-                setFormErrorField(null)
-              }}
-              onSubmit={submitRelative}
-              onCancel={() => {
-                setRelativeForm(null)
-                setFirstName('')
-                setLastName('')
-                setFormError('')
-                setFormErrorField(null)
-                setConnectionAnswers({ checked: {}, choice: null })
-                setConnectionError(false)
-              }}
-            />
-          ) : editing && selectedPerson ? (
-            <EditPersonForm
-              firstName={firstName}
-              lastName={lastName}
-              gender={selectedGender}
-              genderMode={genderMode}
-              dateFields={dateFields}
-              dateError={dateError}
-              onGender={(gender) => {
-                setGenderMode('manual')
-                setManualGender(gender)
-              }}
-              onDateField={(group, field, value) => {
-                setDateFields((current) => ({
-                  ...current,
-                  [group]: { ...current[group], [field]: value },
-                }))
-                setDateError((current) =>
-                  current?.group === group || current?.code === 'errorOrder'
-                    ? null
-                    : current,
-                )
-              }}
-              onDateBlur={validateDateField}
-              error={formError}
-              errorField={formErrorField}
-              firstNameRef={relativeFirstNameRef}
-              onFirstName={(value) => {
-                setFirstName(value)
-                setFormError('')
-                setFormErrorField(null)
-              }}
-              onLastName={(value) => {
-                setLastName(value)
-                setFormError('')
-                setFormErrorField(null)
-              }}
-              onSubmit={submitEdit}
-              onCancel={cancelEdit}
-            />
-          ) : null}
-        </aside>
-      )}
+      {selectedPerson &&
+        (relativeForm || editing || weddingDateChooser || editingMarriage) && (
+          <aside className="panel detail-panel" aria-label={selectedName}>
+            <button
+              type="button"
+              className="icon-pill detail-panel__close"
+              aria-label={t('close')}
+              onClick={closeDetail}
+            >
+              ×
+            </button>
+            {relativeForm ? (
+              <RelativeForm
+                relation={relativeForm}
+                name={selectedName}
+                firstName={firstName}
+                lastName={lastName}
+                gender={selectedGender}
+                genderMode={genderMode}
+                dateFields={dateFields}
+                dateError={dateError}
+                weddingDateFields={weddingDateFields}
+                weddingDateError={weddingDateError}
+                onWeddingDateField={(field, value) => {
+                  setWeddingDateFields((current) => ({
+                    ...current,
+                    [field]: value,
+                  }))
+                  setWeddingDateError(null)
+                }}
+                onWeddingDateBlur={validateWeddingDateField}
+                onGender={(gender) => {
+                  setGenderMode('manual')
+                  setManualGender(gender)
+                }}
+                onDateField={(group, field, value) => {
+                  setDateFields((current) => ({
+                    ...current,
+                    [group]: { ...current[group], [field]: value },
+                  }))
+                  setDateError((current) =>
+                    current?.group === group || current?.code === 'errorOrder'
+                      ? null
+                      : current,
+                  )
+                }}
+                onDateBlur={validateDateField}
+                error={formError}
+                errorField={formErrorField}
+                tree={tree}
+                questions={connectionQuestions}
+                answers={connectionAnswers}
+                connectionError={connectionError}
+                choiceRef={connectionChoiceRef}
+                onAnswers={(answers) => {
+                  setConnectionAnswers(answers)
+                  setConnectionError(
+                    answers.choice === null ? connectionError : false,
+                  )
+                  setFormError('')
+                }}
+                firstNameRef={relativeFirstNameRef}
+                onFirstName={(value) => {
+                  setFirstName(value)
+                  setFormError('')
+                  setFormErrorField(null)
+                }}
+                onLastName={(value) => {
+                  setLastName(value)
+                  setFormError('')
+                  setFormErrorField(null)
+                }}
+                onSubmit={submitRelative}
+                onCancel={() => {
+                  setRelativeForm(null)
+                  setFirstName('')
+                  setLastName('')
+                  setFormError('')
+                  setFormErrorField(null)
+                  setConnectionAnswers({ checked: {}, choice: null })
+                  setConnectionError(false)
+                  setWeddingDateFields(emptyPartialDateParts())
+                  setWeddingDateError(null)
+                }}
+              />
+            ) : editing && selectedPerson ? (
+              <EditPersonForm
+                firstName={firstName}
+                lastName={lastName}
+                gender={selectedGender}
+                genderMode={genderMode}
+                dateFields={dateFields}
+                dateError={dateError}
+                onGender={(gender) => {
+                  setGenderMode('manual')
+                  setManualGender(gender)
+                }}
+                onDateField={(group, field, value) => {
+                  setDateFields((current) => ({
+                    ...current,
+                    [group]: { ...current[group], [field]: value },
+                  }))
+                  setDateError((current) =>
+                    current?.group === group || current?.code === 'errorOrder'
+                      ? null
+                      : current,
+                  )
+                }}
+                onDateBlur={validateDateField}
+                error={formError}
+                errorField={formErrorField}
+                firstNameRef={relativeFirstNameRef}
+                onFirstName={(value) => {
+                  setFirstName(value)
+                  setFormError('')
+                  setFormErrorField(null)
+                }}
+                onLastName={(value) => {
+                  setLastName(value)
+                  setFormError('')
+                  setFormErrorField(null)
+                }}
+                onSubmit={submitEdit}
+                onCancel={cancelEdit}
+              />
+            ) : weddingDateChooser ? (
+              <section className="wedding-date-chooser">
+                <h2 className="detail-panel__form-title">
+                  {t('weddingDate.manage')}
+                </h2>
+                <div className="wedding-date-chooser__partners">
+                  {selectedPartnerIds.map((partnerId) => {
+                    const partner = tree.nodes.find(
+                      ({ id }) => id === partnerId,
+                    )
+                    if (!partner) return null
+                    const edge = selectedPartnerEdges.find(
+                      (candidate) =>
+                        candidate.type === 'marriage' &&
+                        ((candidate.from === selectedId &&
+                          candidate.to === partnerId) ||
+                          (candidate.to === selectedId &&
+                            candidate.from === partnerId)),
+                    )
+                    const dateLabel =
+                      edge?.type === 'marriage' && edge.dateOfMarriage
+                        ? formatPartialDate(
+                            edge.dateOfMarriage,
+                            i18n.resolvedLanguage ?? 'en',
+                          )
+                        : t('weddingDate.notSet')
+                    return (
+                      <button
+                        ref={
+                          selectedPartnerIds[0] === partnerId
+                            ? weddingDateChooserRef
+                            : undefined
+                        }
+                        className="button button--ghost"
+                        key={partnerId}
+                        type="button"
+                        onClick={() => openWeddingDateEditor(partnerId)}
+                      >
+                        {t('weddingDate.editWith', {
+                          name: getDisplayName(partner),
+                          date: dateLabel,
+                        })}
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+            ) : editingMarriage ? (
+              <WeddingDateForm
+                partnerName={
+                  editingPartner ? getDisplayName(editingPartner) : ''
+                }
+                dateFields={weddingDateFields}
+                dateError={weddingDateError}
+                onDateField={(field, value) => {
+                  setWeddingDateFields((current) => ({
+                    ...current,
+                    [field]: value,
+                  }))
+                  setWeddingDateError(null)
+                }}
+                dateInputRef={weddingDateDayRef}
+                onDateBlur={validateWeddingDateField}
+                onSubmit={submitWeddingDate}
+                onCancel={() => {
+                  setEditingMarriage(null)
+                  setWeddingDateError(null)
+                  if (selectedId) {
+                    window.requestAnimationFrame(() =>
+                      focusPersonControl(selectedId, 'identity'),
+                    )
+                  }
+                }}
+              />
+            ) : null}
+          </aside>
+        )}
       {selectedPerson && deletePreview && (
         <DeletePersonDialog
           name={selectedName}
@@ -1437,6 +1658,10 @@ function emptyPersonDateFields(): PersonDateFields {
   }
 }
 
+function emptyPartialDateParts(): PartialDateParts {
+  return { day: '', month: '', year: '' }
+}
+
 interface PersonFieldsProps {
   firstName: string
   lastName: string
@@ -1456,6 +1681,114 @@ interface PersonFieldsProps {
     value: string,
   ) => void
   onDateBlur: (group: 'birth' | 'death') => void
+}
+
+function WeddingDateFieldset({
+  dateFields,
+  dateError,
+  dayInputRef,
+  onDateField,
+  onDateBlur,
+}: {
+  dateFields: PartialDateParts
+  dateError: DateValidationError | null
+  dayInputRef?: React.RefObject<HTMLInputElement | null>
+  onDateField: (field: keyof PartialDateParts, value: string) => void
+  onDateBlur: () => void
+}) {
+  const { t } = useTranslation()
+  const dateParts = [
+    { key: 'day', label: t('person.date.day'), maxLength: 2 },
+    { key: 'month', label: t('person.date.month'), maxLength: 2 },
+    { key: 'year', label: t('person.date.year'), maxLength: 4 },
+  ] as const
+  const errorId = 'wedding-date-error'
+  return (
+    <fieldset className="person-date">
+      <legend>{t('weddingDate.label')}</legend>
+      <div className="person-date__inputs">
+        {dateParts.map(({ key, label, maxLength }) => {
+          const id = `wedding-date-${key}`
+          return (
+            <div
+              className={`person-date__field person-date__field--${key}`}
+              key={key}
+            >
+              <label htmlFor={id}>{label}</label>
+              <input
+                id={id}
+                ref={key === 'day' ? dayInputRef : undefined}
+                inputMode="numeric"
+                maxLength={maxLength}
+                value={dateFields[key]}
+                aria-invalid={Boolean(dateError)}
+                aria-describedby={dateError ? errorId : undefined}
+                onBlur={onDateBlur}
+                onChange={(event) => onDateField(key, event.target.value)}
+              />
+            </div>
+          )
+        })}
+      </div>
+      {dateError ? (
+        <p className="field__error" id={errorId} role="alert">
+          {t(`person.date.${dateError}`)}
+        </p>
+      ) : (
+        <p className="person-field__hint">{t('person.date.hint')}</p>
+      )}
+    </fieldset>
+  )
+}
+
+function WeddingDateForm({
+  partnerName,
+  dateFields,
+  dateError,
+  dateInputRef,
+  onDateField,
+  onDateBlur,
+  onSubmit,
+  onCancel,
+}: {
+  partnerName: string
+  dateFields: PartialDateParts
+  dateError: DateValidationError | null
+  dateInputRef: React.RefObject<HTMLInputElement | null>
+  onDateField: (field: keyof PartialDateParts, value: string) => void
+  onDateBlur: () => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onCancel: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <h2 className="detail-panel__form-title">
+        {t('weddingDate.title', { name: partnerName })}
+      </h2>
+      <form className="relative-form" onSubmit={onSubmit} noValidate>
+        <WeddingDateFieldset
+          dateFields={dateFields}
+          dateError={dateError}
+          dayInputRef={dateInputRef}
+          onDateField={onDateField}
+          onDateBlur={onDateBlur}
+        />
+        <div className="form-actions">
+          <button className="button button--primary" type="submit">
+            {t('save')}
+          </button>
+          <button
+            className="button button--ghost"
+            type="button"
+            onClick={onCancel}
+          >
+            {t('cancel')}
+          </button>
+        </div>
+      </form>
+    </>
+  )
 }
 
 function PersonFields({
@@ -1646,6 +1979,8 @@ function RelativeForm({
   genderMode,
   dateFields,
   dateError,
+  weddingDateFields,
+  weddingDateError,
   error,
   errorField,
   tree,
@@ -1660,6 +1995,8 @@ function RelativeForm({
   onGender,
   onDateField,
   onDateBlur,
+  onWeddingDateField,
+  onWeddingDateBlur,
   onSubmit,
   onCancel,
 }: {
@@ -1671,6 +2008,8 @@ function RelativeForm({
   genderMode: 'automatic' | 'manual'
   dateFields: PersonDateFields
   dateError: DateError | null
+  weddingDateFields: PartialDateParts
+  weddingDateError: DateValidationError | null
   error: string
   errorField: 'firstName' | 'lastName' | null
   tree: FamilyTree
@@ -1685,6 +2024,8 @@ function RelativeForm({
   onGender: (gender: Gender) => void
   onDateField: PersonFieldsProps['onDateField']
   onDateBlur: PersonFieldsProps['onDateBlur']
+  onWeddingDateField: (field: keyof PartialDateParts, value: string) => void
+  onWeddingDateBlur: () => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   onCancel: () => void
 }) {
@@ -1717,6 +2058,14 @@ function RelativeForm({
           onDateField={onDateField}
           onDateBlur={onDateBlur}
         />
+        {relation === 'partner' && (
+          <WeddingDateFieldset
+            dateFields={weddingDateFields}
+            dateError={weddingDateError}
+            onDateField={onWeddingDateField}
+            onDateBlur={onWeddingDateBlur}
+          />
+        )}
         <ConnectionQuestions
           groups={questions}
           tree={tree}

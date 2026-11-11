@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildPartialDate,
   formatDateYears,
+  formatPartialDate,
   isValidPartialDate,
   parsePartialDate,
   validateDateOrder,
@@ -101,5 +102,13 @@ describe('partial dates', () => {
       'd. 2019',
     )
     expect(formatDateYears('2021-02-30', undefined, born, died, range)).toBe('')
+  })
+
+  it('formats partial dates using the active locale', () => {
+    expect(formatPartialDate('2001', 'en')).toBe('2001')
+    expect(formatPartialDate('2001-06', 'en')).toBe('June 2001')
+    expect(formatPartialDate('2001-06-23', 'en')).toBe('Jun 23, 2001')
+    expect(formatPartialDate('2001-06-23', 'pl')).toContain('2001')
+    expect(formatPartialDate('2001-02-30', 'en')).toBe('')
   })
 })

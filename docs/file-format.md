@@ -31,6 +31,9 @@ or confirm the export target.
   Unknown fields in `data` and `metaData` are retained.
 - `edges` is an array of relationships in creation order. `from` and `to`
   contain node IDs, and `type` is one of the relationship types below.
+  Marriage edges may optionally include `dateOfMarriage`, using the same
+  partial date formats and calendar rules as person dates. The field is omitted
+  when unset and is not allowed on other edge types.
 - Unknown fields on the tree, nodes, data, and edges are retained where
   supported.
 
@@ -61,6 +64,19 @@ changing the loaded/export status.
 
 For `sibling` and `marriage`, reversing `from` and `to` does not create a
 different relationship.
+
+A marriage edge may store an optional `dateOfMarriage` in the same partial
+date format. Older marriage edges without this field remain valid and unchanged
+when imported and exported.
+
+```json
+{
+  "from": "person-anna",
+  "to": "person-jan",
+  "type": "marriage",
+  "dateOfMarriage": "2001-06-23"
+}
+```
 
 ## Validation
 

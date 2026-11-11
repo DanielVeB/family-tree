@@ -31,6 +31,7 @@ import {
   deletePerson,
   getDisplayName,
   TreeOperationError,
+  updateMarriageDate,
   updatePerson,
   type ConnectionAnswers,
   type FamilyTree,
@@ -349,6 +350,7 @@ function App() {
     answers: ConnectionAnswers,
     centers: Record<string, number>,
     side?: 'left' | 'right',
+    dateOfMarriage?: string,
   ) {
     const result = addRelativeWithResult(
       state.tree,
@@ -358,6 +360,7 @@ function App() {
       answers,
       centers,
       side,
+      dateOfMarriage,
     )
     const tree = result.tree
     clearToast()
@@ -379,6 +382,27 @@ function App() {
     const updatedPerson = tree.nodes.find(({ id }) => id === personId)
     if (updatedPerson) {
       showToast({ kind: 'edit', name: getDisplayName(updatedPerson) }, 10_000)
+    }
+    return true
+  }
+
+  function editMarriageDate(
+    firstPersonId: string,
+    secondPersonId: string,
+    dateOfMarriage: string | undefined,
+  ): boolean {
+    const tree = updateMarriageDate(
+      state.tree,
+      firstPersonId,
+      secondPersonId,
+      dateOfMarriage,
+    )
+    if (tree === state.tree) return false
+    clearToast()
+    dispatch({ type: 'edit-person', tree })
+    const person = tree.nodes.find(({ id }) => id === firstPersonId)
+    if (person) {
+      showToast({ kind: 'edit', name: getDisplayName(person) }, 10_000)
     }
     return true
   }
@@ -773,6 +797,7 @@ function App() {
             onSelect={(selectedId) => dispatch({ type: 'select', selectedId })}
             onAddRelative={createRelative}
             onUpdatePerson={editPerson}
+            onUpdateMarriageDate={editMarriageDate}
             onDeletePerson={removePerson}
             onMovePerson={movePerson}
           />

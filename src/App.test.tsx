@@ -115,6 +115,55 @@ describe('start tree and add a relative', () => {
     },
   )
 
+  it('adds, edits, clears, and undoes a partner wedding date', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(await screen.findByRole('button', { name: 'Anna' }))
+    await user.click(
+      screen.getByRole('button', { name: 'Add partner on the right' }),
+    )
+
+    await user.type(screen.getByLabelText('First name'), 'Jan')
+    await user.type(document.getElementById('wedding-date-day')!, '23')
+    await user.type(document.getElementById('wedding-date-month')!, '6')
+    await user.type(document.getElementById('wedding-date-year')!, '2001')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Jun 23, 2001')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Wedding dates' }))
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Wedding date with Jan: Jun 23, 2001',
+      }),
+    )
+    await user.clear(document.getElementById('wedding-date-day')!)
+    await user.clear(document.getElementById('wedding-date-month')!)
+    await user.clear(document.getElementById('wedding-date-year')!)
+    await user.type(document.getElementById('wedding-date-year')!, '2002')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('2002')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(await screen.findByText('Jun 23, 2001')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Jan' }))
+    await user.click(screen.getByRole('button', { name: 'Wedding dates' }))
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Wedding date with Anna: Jun 23, 2001',
+      }),
+    )
+    await user.clear(document.getElementById('wedding-date-day')!)
+    await user.clear(document.getElementById('wedding-date-month')!)
+    await user.clear(document.getElementById('wedding-date-year')!)
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(screen.queryByText('Jun 23, 2001')).toBeNull()
+    expect(document.querySelector('.marriage-date-label')).toBeNull()
+  })
+
   it('saves suggested gender and a birth year, then exports both optional fields', async () => {
     const user = userEvent.setup()
     const createObjectURL = vi.fn((blob: Blob) => {

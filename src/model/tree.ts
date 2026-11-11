@@ -32,13 +32,30 @@ const NodeSchema = z
   })
   .passthrough()
 
-const EdgeSchema = z
-  .object({
-    from: z.string().min(1),
-    to: z.string().min(1),
-    type: RelationTypeSchema,
-  })
-  .passthrough()
+const EdgeSchema = z.discriminatedUnion('type', [
+  z
+    .object({
+      from: z.string().min(1),
+      to: z.string().min(1),
+      type: z.literal('child'),
+    })
+    .passthrough(),
+  z
+    .object({
+      from: z.string().min(1),
+      to: z.string().min(1),
+      type: z.literal('sibling'),
+    })
+    .passthrough(),
+  z
+    .object({
+      from: z.string().min(1),
+      to: z.string().min(1),
+      type: z.literal('marriage'),
+      dateOfMarriage: PartialDateSchema.optional(),
+    })
+    .passthrough(),
+])
 
 export const TreeSchema = z
   .object({
@@ -63,6 +80,13 @@ export const TreeSchema = z
     const edgeKeys = new Set<string>()
     const childGraph = new Map<string, string[]>()
     tree.edges.forEach((edge, index) => {
+      if (edge.type !== 'marriage' && 'dateOfMarriage' in edge) {
+        context.addIssue({
+          code: 'custom',
+          path: ['edges', index, 'dateOfMarriage'],
+          message: 'dateOfMarriageRequiresMarriage',
+        })
+      }
       if (!nodeIds.has(edge.from) || !nodeIds.has(edge.to)) {
         context.addIssue({
           code: 'custom',
@@ -221,6 +245,8 @@ export type TreeOperationErrorCode =
   | 'tooManyParents'
   | 'missingConnectionChoice'
   | 'invalidConnectionAnswer'
+  | 'invalidDate'
+  | 'unknownMarriage'
 
 export class TreeOperationError extends Error {
   constructor(readonly code: TreeOperationErrorCode) {
@@ -293,6 +319,36 @@ export function getPartnersOf(tree: FamilyTree, personId: string): string[] {
     if (other && !partners.includes(other)) partners.push(other)
   }
   return partners
+}
+
+export function updateMarriageDate(
+  tree: FamilyTree,
+  firstPersonId: string,
+  secondPersonId: string,
+  dateOfMarriage: string | undefined,
+): FamilyTree {
+  if (dateOfMarriage !== undefined && !isValidPartialDate(dateOfMarriage)) {
+    throw new TreeOperationError('invalidDate')
+  }
+  const edgeIndex = tree.edges.findIndex(
+    (edge) =>
+      edge.type === 'marriage' &&
+      ((edge.from === firstPersonId && edge.to === secondPersonId) ||
+        (edge.from === secondPersonId && edge.to === firstPersonId)),
+  )
+  if (edgeIndex < 0) throw new TreeOperationError('unknownMarriage')
+  const edge = tree.edges[edgeIndex]!
+  if (edge.type !== 'marriage') return tree
+  if (edge.dateOfMarriage === dateOfMarriage) return tree
+  const edges = [...tree.edges]
+  if (dateOfMarriage === undefined) {
+    const edgeWithoutDate = { ...edge }
+    delete edgeWithoutDate.dateOfMarriage
+    edges[edgeIndex] = edgeWithoutDate
+  } else {
+    edges[edgeIndex] = { ...edge, dateOfMarriage }
+  }
+  return { ...tree, edges }
 }
 
 export function getCoParentsOf(tree: FamilyTree, personId: string): string[] {
@@ -607,6 +663,7 @@ export function addRelative(
   answers?: ConnectionAnswers,
   centers?: Record<string, number>,
   side?: 'left' | 'right',
+  dateOfMarriage?: string,
 ): FamilyTree {
   return addRelativeWithResult(
     tree,
@@ -616,6 +673,7 @@ export function addRelative(
     answers,
     centers,
     side,
+    dateOfMarriage,
   ).tree
 }
 
@@ -627,9 +685,16 @@ export function addRelativeWithResult(
   answers?: ConnectionAnswers,
   centers?: Record<string, number>,
   side?: 'left' | 'right',
+  dateOfMarriage?: string,
 ): { tree: FamilyTree; levelsRecalculated: boolean } {
   if (!tree.nodes.some((node) => node.id === selectedId)) {
     throw new TreeOperationError('unknownPerson')
+  }
+  if (
+    dateOfMarriage !== undefined &&
+    (relation !== 'partner' || !isValidPartialDate(dateOfMarriage))
+  ) {
+    throw new TreeOperationError('invalidDate')
   }
 
   const questions = getConnectionQuestions(tree, selectedId, relation)
@@ -645,7 +710,12 @@ export function addRelativeWithResult(
         ? { from: selectedId, to: person.id, type: 'child' }
         : relation === 'sibling'
           ? { from: selectedId, to: person.id, type: 'sibling' }
-          : { from: selectedId, to: person.id, type: 'marriage' }
+          : {
+              from: selectedId,
+              to: person.id,
+              type: 'marriage',
+              ...(dateOfMarriage ? { dateOfMarriage } : {}),
+            }
   const extraEdges: TreeEdge[] = []
 
   for (const question of questions) {
