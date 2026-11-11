@@ -78,6 +78,41 @@ describe('start tree and add a relative', () => {
     })
   })
 
+  it.each([
+    ['sibling', 'left'],
+    ['partner', 'right'],
+  ] as const)(
+    'adds a %s on the %s when chosen from its connection button',
+    async (relation, side) => {
+      const user = userEvent.setup()
+      render(<App />)
+      await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+      await user.type(screen.getByLabelText('First name'), 'Anchor')
+      await user.click(screen.getByRole('button', { name: 'Create tree' }))
+      const anchor = await screen.findByRole('button', { name: 'Anchor' })
+      await user.click(anchor)
+
+      const actionLabel =
+        relation === 'sibling'
+          ? 'Add sibling on the left'
+          : 'Add partner on the right'
+      await user.click(screen.getByRole('button', { name: actionLabel }))
+      await user.type(screen.getByLabelText('First name'), 'Relative')
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      const relative = await screen.findByRole('button', { name: 'Relative' })
+      const anchorLeft = Number.parseFloat(
+        anchor.closest<HTMLElement>('.person-card')!.style.left,
+      )
+      const relativeLeft = Number.parseFloat(
+        relative.closest<HTMLElement>('.person-card')!.style.left,
+      )
+      expect(side === 'left' ? relativeLeft : anchorLeft).toBeLessThan(
+        side === 'left' ? anchorLeft : relativeLeft,
+      )
+    },
+  )
+
   it('requires a first name before creating the first person', async () => {
     const user = userEvent.setup()
     render(<App />)
@@ -289,7 +324,7 @@ describe('start tree and add a relative', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await user.click(screen.getByRole('button', { name: 'Anna' }))
-    await user.click(screen.getByRole('button', { name: 'Add partner' }))
+    await user.click(screen.getByRole('button', { name: 'Add partner on the right' }))
     const miaAsPartnerChild = screen.getByRole('checkbox', {
       name: 'Mia is also a child of the new partner',
     })
@@ -340,7 +375,7 @@ describe('start tree and add a relative', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await user.click(screen.getByRole('button', { name: 'Anna' }))
-    await user.click(screen.getByRole('button', { name: 'Add partner' }))
+    await user.click(screen.getByRole('button', { name: 'Add partner on the right' }))
     expect(
       screen.getByRole('checkbox', {
         name: /Mia is also a child of the new partner/,
@@ -961,6 +996,12 @@ describe('edit and delete people', () => {
     fireEvent.change(input, { target: { files: [makeFile(tree)] } })
     await user.click(await screen.findByRole('button', { name: 'Person' }))
     expect(screen.queryByRole('dialog', { name: 'Move Person?' })).not.toBeInTheDocument()
+    await user.click(getPersonActionButton('Person', 'move'))
+    expect(screen.getByRole('button', { name: 'Move right one place' })).toBeVisible()
+    fireEvent.pointerDown(document.body)
+    expect(
+      screen.queryByRole('button', { name: 'Move right one place' }),
+    ).not.toBeInTheDocument()
     await user.click(getPersonActionButton('Person', 'move'))
     await user.click(
       screen.getByRole('button', { name: 'Move right one place' }),

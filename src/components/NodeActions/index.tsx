@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Tooltip } from '../Tooltip'
 import { type RelativeKind } from '../../model/tree'
@@ -80,11 +81,37 @@ function NodeActionButton({
   )
 }
 
-const childrenMap: Record<string, string> = {
-  'add-parent': '↑',
-  'add-child': '↓',
-  'add-sibling': '⇄',
-  'add-partner': '♥',
+function RelativeIcon({ kind }: { kind: 'parent' | 'child' }) {
+  return (
+    <svg
+      aria-hidden="true"
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="10" cy="5" r="3" />
+      <path d="M10 8v4m-5 0h10m-10 0v4m10-4v4" />
+      {kind === 'parent' ? (
+        <path d="M19 4v6m-3-3h6" />
+      ) : (
+        <path d="M19 14v6m-3-3h6" />
+      )}
+    </svg>
+  )
+}
+
+const childrenMap: Record<string, ReactNode> = {
+  'add-parent': <RelativeIcon kind="parent" />,
+  'add-child': <RelativeIcon kind="child" />,
+  'add-sibling-left': '⇄',
+  'add-sibling-right': '⇄',
+  'add-partner-left': '♥',
+  'add-partner-right': '♥',
   edit: '✎',
   delete: '⌫',
   move: '✦',
@@ -97,7 +124,7 @@ interface NodeActionsProps {
   cardWidth: number
   cardHeight: number
   selectedHasTwoParents: boolean
-  onAddRelative: (kind: RelativeKind) => void
+  onAddRelative: (kind: RelativeKind, side?: 'left' | 'right') => void
 }
 
 export function NodeActions({
@@ -111,7 +138,7 @@ export function NodeActions({
 }: NodeActionsProps) {
   const { t } = useTranslation()
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
-  const actionSize = 36
+  const actionSize = 44
   const gap = 8
   const actionButtons = [
     {
@@ -127,23 +154,47 @@ export function NodeActions({
       disabled: selectedHasTwoParents,
     },
     {
-      id: 'add-sibling',
+      id: 'add-sibling-left',
       kind: 'sibling' as const,
-      label: t('nodeActions.addSibling'),
-      tooltip: t('nodeActions.addSibling'),
+      side: 'left' as const,
+      label: t('nodeActions.addSiblingLeft'),
+      tooltip: t('nodeActions.addSiblingLeft'),
       placement: 'left' as const,
-      left: cardLeft - gap - actionSize,
-      top: cardTop + cardHeight / 2 - actionSize / 2,
+      left: cardLeft - actionSize,
+      top: cardTop + cardHeight / 2 - actionSize - gap / 2,
       disabled: false,
     },
     {
-      id: 'add-partner',
+      id: 'add-partner-left',
       kind: 'partner' as const,
-      label: t('nodeActions.addPartner'),
-      tooltip: t('nodeActions.addPartner'),
+      side: 'left' as const,
+      label: t('nodeActions.addPartnerLeft'),
+      tooltip: t('nodeActions.addPartnerLeft'),
+      placement: 'left' as const,
+      left: cardLeft - actionSize,
+      top: cardTop + cardHeight / 2 + gap / 2,
+      disabled: false,
+    },
+    {
+      id: 'add-sibling-right',
+      kind: 'sibling' as const,
+      side: 'right' as const,
+      label: t('nodeActions.addSiblingRight'),
+      tooltip: t('nodeActions.addSiblingRight'),
       placement: 'right' as const,
-      left: cardLeft + cardWidth + gap,
-      top: cardTop + cardHeight / 2 - actionSize / 2,
+      left: cardLeft + cardWidth,
+      top: cardTop + cardHeight / 2 - actionSize - gap / 2,
+      disabled: false,
+    },
+    {
+      id: 'add-partner-right',
+      kind: 'partner' as const,
+      side: 'right' as const,
+      label: t('nodeActions.addPartnerRight'),
+      tooltip: t('nodeActions.addPartnerRight'),
+      placement: 'right' as const,
+      left: cardLeft + cardWidth,
+      top: cardTop + cardHeight / 2 + gap / 2,
       disabled: false,
     },
     {
@@ -167,10 +218,11 @@ export function NodeActions({
       {actionButtons.map((button) => {
         const visible = activeTooltip === button.id
         const onClickAction = () => {
-          if (button.id === 'add-parent') onAddRelative('parent')
-          if (button.id === 'add-child') onAddRelative('child')
-          if (button.id === 'add-sibling') onAddRelative('sibling')
-          if (button.id === 'add-partner') onAddRelative('partner')
+          if (button.kind === 'parent' || button.kind === 'child') {
+            onAddRelative(button.kind)
+          } else {
+            onAddRelative(button.kind, button.side)
+          }
         }
 
         return (
@@ -238,6 +290,24 @@ export function InlineNodeControls({
   const { t } = useTranslation()
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const [moveOpen, setMoveOpen] = useState(false)
+  const moveTriggerRef = useRef<HTMLButtonElement>(null)
+  const movePopoverRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!moveOpen) return
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target
+      if (
+        target instanceof Node &&
+        !moveTriggerRef.current?.contains(target) &&
+        !movePopoverRef.current?.contains(target)
+      ) {
+        setMoveOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    return () =>
+      document.removeEventListener('pointerdown', closeOnOutsidePointer)
+  }, [moveOpen])
   const moveButtonDefs = [
     ['up', '↑', 'layers.up'],
     ['down', '↓', 'layers.down'],
@@ -272,6 +342,7 @@ export function InlineNodeControls({
       {actionDefs.map(({ id, label, icon, onClick }) => (
         <div className="person-card__control-wrap" key={id}>
           <button
+            ref={id === 'move' ? moveTriggerRef : undefined}
             type="button"
             className={`icon-pill person-card__control person-card__control--${id}`}
             aria-label={label}
@@ -301,7 +372,7 @@ export function InlineNodeControls({
         </div>
       ))}
       {moveOpen && (
-        <div className="node-move-popover">
+        <div className="node-move-popover" ref={movePopoverRef}>
           <div className="node-move-popover__label">
             {t('layers.level', { level: currentLevel + 1 })}
           </div>

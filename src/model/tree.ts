@@ -574,6 +574,7 @@ export function addRelative(
   name: PersonName,
   answers?: ConnectionAnswers,
   centers?: Record<string, number>,
+  side?: 'left' | 'right',
 ): FamilyTree {
   return addRelativeWithResult(
     tree,
@@ -582,6 +583,7 @@ export function addRelative(
     name,
     answers,
     centers,
+    side,
   ).tree
 }
 
@@ -592,6 +594,7 @@ export function addRelativeWithResult(
   name: PersonName,
   answers?: ConnectionAnswers,
   centers?: Record<string, number>,
+  side?: 'left' | 'right',
 ): { tree: FamilyTree; levelsRecalculated: boolean } {
   if (!tree.nodes.some((node) => node.id === selectedId)) {
     throw new TreeOperationError('unknownPerson')
@@ -701,6 +704,7 @@ export function addRelativeWithResult(
     layer,
     extraEdges,
     centers,
+    side,
   )
   const nodes = insertPersonAtOrder(
     nodesAfterParentShift,
@@ -967,6 +971,7 @@ function getRelativeInsertionOrder(
   layer: number,
   extraEdges: TreeEdge[],
   centers?: Record<string, number>,
+  side?: 'left' | 'right',
 ): number {
   const row = tree.nodes
     .filter(({ metaData }) => metaData.layer === layer)
@@ -1032,6 +1037,9 @@ function getRelativeInsertionOrder(
       : row.length
   }
   if (relation === 'partner') {
+    if (side) {
+      return orderAtX(centerOf(selectedId) + (side === 'right' ? 1 : -1))
+    }
     const selectedPartners = getPartnersOf(tree, selectedId)
       .filter((id) => row.some((person) => person.id === id))
       .sort((a, b) => centerOf(a) - centerOf(b))
@@ -1053,6 +1061,30 @@ function getRelativeInsertionOrder(
       : safeOrderAtX(centerOf(selectedId))
   }
   const run = new Set([selectedId, ...getSiblingsOf(tree, selectedId)])
+  if (side) {
+    const firstMember = row
+      .filter(({ id }) => run.has(id))
+      .sort((a, b) => centerOf(a.id) - centerOf(b.id))[0]
+    if (side === 'left') {
+      if (!firstMember) return orderAtX(centerOf(selectedId) - 1)
+      const firstPartner = getPartnersOf(tree, firstMember.id)
+        .filter((id) => row.some((person) => person.id === id))
+        .filter((id) => centerOf(id) < centerOf(firstMember.id))
+        .sort((a, b) => centerOf(a) - centerOf(b))[0]
+      return orderAtX(centerOf(firstPartner ?? firstMember.id) - 1)
+    }
+    const lastMember = row
+      .filter(({ id }) => run.has(id))
+      .sort((a, b) => centerOf(a.id) - centerOf(b.id))
+      .at(-1)
+    if (!lastMember) return orderAtX(centerOf(selectedId) + 1)
+    const lastPartner = getPartnersOf(tree, lastMember.id)
+      .filter((id) => row.some((person) => person.id === id))
+      .filter((id) => centerOf(id) > centerOf(lastMember.id))
+      .sort((a, b) => centerOf(a) - centerOf(b))
+      .at(-1)
+    return orderAtX(centerOf(lastPartner ?? lastMember.id) + 1)
+  }
   const lastMember = row
     .filter(({ id }) => run.has(id))
     .sort((a, b) => centerOf(a.id) - centerOf(b.id))

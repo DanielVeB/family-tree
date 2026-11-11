@@ -601,9 +601,9 @@ h1 {
 }
 
 .node-action-button {
-  width: 36px;
-  height: 36px;
-  margin: 4px;
+  width: 44px;
+  height: 44px;
+  margin: 0;
   border: 1px solid var(--border);
   background: var(--cream);
   box-shadow: var(--shadow-inset);

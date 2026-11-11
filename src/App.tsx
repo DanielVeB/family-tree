@@ -339,6 +339,7 @@ function App() {
     name: PersonName,
     answers: ConnectionAnswers,
     centers: Record<string, number>,
+    side?: 'left' | 'right',
   ) {
     const result = addRelativeWithResult(
       state.tree,
@@ -347,6 +348,7 @@ function App() {
       name,
       answers,
       centers,
+      side,
     )
     const tree = result.tree
     clearToast()

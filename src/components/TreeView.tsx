@@ -46,6 +46,7 @@ interface TreeViewProps {
     name: PersonName,
     answers: ConnectionAnswers,
     centers: Record<string, number>,
+    side?: 'left' | 'right',
   ) => void
   onUpdatePerson: (personId: string, name: PersonName) => boolean
   onDeletePerson: (personId: string) => void
@@ -126,6 +127,7 @@ export default function TreeView({
   const [drag, setDrag] = useState<DragPreview | null>(null)
   const [heldPersonId, setHeldPersonId] = useState<string | null>(null)
   const [relativeForm, setRelativeForm] = useState<RelativeKind | null>(null)
+  const [relativeSide, setRelativeSide] = useState<'left' | 'right' | undefined>()
   const [editing, setEditing] = useState(false)
   const [deletePreview, setDeletePreview] = useState<DeletePreview | null>(null)
   const [editAnnounced, setEditAnnounced] = useState(false)
@@ -577,6 +579,7 @@ export default function TreeView({
             point.x,
           ]),
         ),
+        relativeSide,
       )
     } catch (error) {
       if (!(error instanceof TreeOperationError)) throw error
@@ -597,7 +600,7 @@ export default function TreeView({
     setRelativeForm(null)
   }
 
-  function openRelativeForm(kind: RelativeKind) {
+  function openRelativeForm(kind: RelativeKind, side?: 'left' | 'right') {
     if (kind === 'parent' && selectedHasTwoParents) return
     const questions = selectedId
       ? getConnectionQuestions(tree, selectedId, kind)
@@ -610,6 +613,7 @@ export default function TreeView({
     setLastName('')
     setEditing(false)
     setEditAnnounced(false)
+    setRelativeSide(side)
     setRelativeForm(kind)
   }
 

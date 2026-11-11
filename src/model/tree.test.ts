@@ -72,6 +72,37 @@ describe('family tree operations', () => {
     },
   )
 
+  it.each([
+    ['sibling', 'left', 0],
+    ['sibling', 'right', 1],
+    ['partner', 'left', 0],
+    ['partner', 'right', 1],
+  ] as const)(
+    'adds a %s on the requested %s side',
+    (relation, side, newPersonOrder) => {
+      const initial = addFirstPerson(createEmptyTree(), {
+        firstName: 'First',
+      })
+      const selectedId = initial.nodes[0]!.id
+      const result = addRelative(
+        initial,
+        selectedId,
+        relation,
+        { firstName: 'Second' },
+        undefined,
+        undefined,
+        side,
+      )
+      const newPerson = result.nodes.find(
+        ({ data }) => data.firstName === 'Second',
+      )!
+      const selectedPerson = result.nodes.find(({ id }) => id === selectedId)!
+
+      expect(newPerson.metaData.order).toBe(newPersonOrder)
+      expect(selectedPerson.metaData.order).toBe(1 - newPersonOrder)
+    },
+  )
+
   it('rejects empty or too-long names with typed errors', () => {
     expect(() =>
       addFirstPerson(createEmptyTree(), { firstName: '  ' }),
