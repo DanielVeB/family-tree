@@ -13,6 +13,7 @@ import NewTreeDialog from './components/NewTreeDialog'
 import NameExportDialog from './components/NameExportDialog'
 import ReplaceTreeDialog from './components/ReplaceTreeDialog'
 import TreeView from './components/TreeView'
+import TimelineDialog from './timeline/TimelineDialog'
 import {
   buildExportFilename,
   exportWithFileSystemAccess,
@@ -226,6 +227,7 @@ function App() {
     hasUnexportedEditOrDelete: false,
   })
   const [showNewTreeDialog, setShowNewTreeDialog] = useState(false)
+  const [showTimeline, setShowTimeline] = useState(false)
   const [pendingImport, setPendingImport] = useState<{
     tree: FamilyTree
     fileName: string
@@ -699,6 +701,14 @@ function App() {
               >
                 {t('exportButton')}
               </button>
+              <button
+                className="button button--ghost timeline-button"
+                type="button"
+                aria-label={t('timeline.open')}
+                onClick={() => setShowTimeline(true)}
+              >
+                {t('timeline.open')}
+              </button>
               <div className="export-more" ref={exportMenuRef}>
                 <button
                   ref={exportMenuButtonRef}
@@ -828,6 +838,12 @@ function App() {
         <ReplaceTreeDialog
           onReplace={() => applyImport(pendingImport)}
           onCancel={cancelImportConfirmation}
+        />
+      )}
+      {showTimeline && (
+        <TimelineDialog
+          tree={state.tree}
+          onClose={() => setShowTimeline(false)}
         />
       )}
       <Toast

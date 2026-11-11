@@ -25,6 +25,36 @@ describe('start tree and add a relative', () => {
     await i18n.changeLanguage('en')
   })
 
+  it('opens the read-only timeline without changing the selected person or export status', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+
+    const anna = await screen.findByRole('button', { name: 'Anna' })
+    await user.click(anna)
+    expect(anna).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Not exported yet')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Timeline' }))
+    expect(
+      screen.getByRole('dialog', { name: 'Family timeline' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('There are no dated events in this tree yet.'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByText('Close'))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Anna' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(screen.getByText('Not exported yet')).toBeInTheDocument()
+  })
+
   it('creates the first person and adds a child from its floating actions', async () => {
     const user = userEvent.setup()
     render(<App />)
@@ -253,9 +283,8 @@ describe('start tree and add a relative', () => {
       ],
       edges: [],
     })
-    const input = document.querySelector<HTMLInputElement>(
-      'input[type="file"]',
-    )!
+    const input =
+      document.querySelector<HTMLInputElement>('input[type="file"]')!
     fireEvent.change(input, { target: { files: [makeFile(oldTree)] } })
     await user.click(await screen.findByRole('button', { name: 'Marek' }))
     await user.click(getPersonActionButton('Marek', 'edit'))

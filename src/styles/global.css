@@ -1205,6 +1205,100 @@ h1 {
   margin-top: 24px;
 }
 
+.timeline-backdrop {
+  z-index: 40;
+}
+
+.timeline-dialog {
+  width: min(100%, 640px);
+  max-height: calc(
+    100dvh - 48px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+  );
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.timeline-dialog:focus-visible,
+.timeline-dialog__event:focus-visible,
+.timeline-dialog__empty:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.timeline-dialog__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.timeline-dialog__header h2 {
+  margin: 4px 0 0;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.9px;
+  overflow-wrap: anywhere;
+}
+
+.timeline-dialog__event {
+  display: grid;
+  min-height: 240px;
+  align-content: center;
+  justify-items: center;
+  gap: 16px;
+  margin-top: 24px;
+  padding: 24px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  text-align: center;
+}
+
+.timeline-dialog__description {
+  margin: 0;
+  color: var(--oak);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.5px;
+  overflow-wrap: anywhere;
+}
+
+.timeline-dialog__date {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+.timeline-dialog__progress {
+  margin: 16px 0 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+.timeline-dialog__controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.timeline-dialog__controls .button {
+  min-width: 0;
+  flex: 1 1 120px;
+}
+
+.timeline-dialog__empty {
+  padding-top: 24px;
+}
+
+.timeline-dialog__empty p {
+  margin: 0 0 24px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .connection-option__hint {
   display: block;
   margin-top: 4px;
@@ -1365,6 +1459,17 @@ h1 {
     clip-path: inset(50%);
   }
 
+  .timeline-button {
+    width: 44px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .timeline-button::before {
+    font-size: 20px;
+    content: '◷';
+  }
+
   .export-toast {
     right: 16px;
     left: 16px;
@@ -1396,6 +1501,18 @@ h1 {
 
   .move-dialog {
     align-self: end;
+    padding: 24px 16px max(24px, env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0;
+  }
+
+  .timeline-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .timeline-dialog {
+    width: 100%;
+    max-height: calc(100dvh - env(safe-area-inset-top));
     padding: 24px 16px max(24px, env(safe-area-inset-bottom));
     border-radius: 16px 16px 0 0;
   }
