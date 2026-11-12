@@ -29,6 +29,38 @@ describe('parseTreeFile', () => {
     expect(parsed.tree.nodes[0]!.metaData.futurePosition).toBe('preserved')
   })
 
+  it('imports files with save history metadata and preserves it on re-export', () => {
+    const file = `${JSON.stringify(
+      {
+        version: 1,
+        metaData: {
+          saveHistory: [
+            {
+              savedAt: '2026-11-12T20:00:00.000Z',
+              target: 'googleDrive',
+              unknown: 'kept',
+            },
+          ],
+          futureMeta: 1,
+        },
+        nodes: [
+          {
+            id: 'anna',
+            data: { firstName: 'Anna' },
+            metaData: { layer: 0, order: 0 },
+          },
+        ],
+        edges: [],
+      },
+      null,
+      2,
+    )}\n`
+    const parsed = parseTreeFile(file)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(JSON.parse(serializeTree(parsed.tree))).toEqual(JSON.parse(file))
+  })
+
   it('round-trips optional wedding dates and rejects them on other edge types', () => {
     const weddingDateFile = `${JSON.stringify(
       {

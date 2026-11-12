@@ -1,8 +1,8 @@
 # Family Tree
 
-A private, client-side family tree app. Family data stays in your browser and is never uploaded.
+A private, client-side family tree app. Family data stays in your browser unless you explicitly open or save a file through Google Drive.
 
-**Privacy:** Your data stays in your browser. Nothing is uploaded. Export your file regularly, because browser storage can be cleared.
+**Privacy:** Your data stays in your browser. Nothing is uploaded unless you choose the Google Drive link feature. Export your file regularly, because browser storage can be cleared.
 
 **Prywatność:** Twoje dane pozostają w przeglądarce. Nic nie jest przesyłane. Regularnie eksportuj plik, ponieważ pamięć przeglądarki może zostać wyczyszczona.
 
@@ -27,12 +27,19 @@ choose another name or location. The selected file is forgotten when you
 reload the app. Importing replaces the open tree; the app asks for confirmation
 first if it has changes that were not exported.
 
+You can also open a shared tree from a Google Drive link. When a tree is loaded
+from Drive, **Save to Drive** overwrites that same file (after Google sign-in
+and only with edit access). Local export remains available as a separate action.
+
 ## Run locally
 
 ```sh
 npm install
 npm run dev
 ```
+
+To enable Google Drive link open/save, set `VITE_GOOGLE_DRIVE_CLIENT_ID` in
+your local environment before running the app.
 
 ## Test and build
 

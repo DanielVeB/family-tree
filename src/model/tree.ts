@@ -8,6 +8,15 @@ export const GenderSchema = z.enum(['female', 'male'])
 export type Gender = z.infer<typeof GenderSchema>
 export const PartialDateSchema = z.string().refine(isValidPartialDate)
 export type PartialDate = z.infer<typeof PartialDateSchema>
+export const SaveHistoryTargetSchema = z.enum(['googleDrive', 'localExport'])
+export type SaveHistoryTarget = z.infer<typeof SaveHistoryTargetSchema>
+export const SaveHistoryEntrySchema = z
+  .object({
+    savedAt: z.string().refine((value) => !Number.isNaN(Date.parse(value))),
+    target: SaveHistoryTargetSchema,
+  })
+  .passthrough()
+export type SaveHistoryEntry = z.infer<typeof SaveHistoryEntrySchema>
 
 const PersonDataSchema = z
   .object({
@@ -62,6 +71,12 @@ export const TreeSchema = z
     version: z.literal(1),
     nodes: z.array(NodeSchema),
     edges: z.array(EdgeSchema),
+    metaData: z
+      .object({
+        saveHistory: z.array(SaveHistoryEntrySchema).optional(),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough()
   .superRefine((tree, context) => {
@@ -153,6 +168,25 @@ export type FamilyTree = z.infer<typeof TreeSchema>
 
 export function createEmptyTree(): FamilyTree {
   return { version: 1, nodes: [], edges: [] }
+}
+
+export function appendSaveHistory(
+  tree: FamilyTree,
+  target: SaveHistoryTarget,
+  savedAt: Date = new Date(),
+): FamilyTree {
+  const currentMetaData =
+    tree.metaData && typeof tree.metaData === 'object'
+      ? tree.metaData
+      : undefined
+  const currentHistory = currentMetaData?.saveHistory ?? []
+  return {
+    ...tree,
+    metaData: {
+      ...(currentMetaData ?? {}),
+      saveHistory: [...currentHistory, { savedAt: savedAt.toISOString(), target }],
+    },
+  }
 }
 
 export function getDisplayName(person: PersonNode): string {

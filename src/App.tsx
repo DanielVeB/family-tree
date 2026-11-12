@@ -9,6 +9,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { ZodError } from 'zod'
 import Toast, { type ToastMessage } from './components/Toast'
+import DriveLinkDialog from './components/DriveLinkDialog'
 import NewTreeDialog from './components/NewTreeDialog'
 import NameExportDialog from './components/NameExportDialog'
 import ReplaceTreeDialog from './components/ReplaceTreeDialog'
@@ -20,14 +21,27 @@ import {
   FileExportError,
   getBrowserSaveFilePicker,
   getImportedExportTarget,
+  normalizeFileName,
   serializeTree,
   startTreeDownload,
   type ExportTarget,
 } from './io/exportTree'
 import { parseTreeFile } from './io/importTree'
 import {
+  GoogleDriveError,
+  loadTreeFromGoogleDriveLink,
+  saveTreeToGoogleDriveFile,
+  type GoogleDriveSource,
+} from './io/googleDrive'
+import {
+  GoogleDriveAuthError,
+  signInToGoogleDrive,
+  type GoogleDriveAuthToken,
+} from './io/googleDriveAuth'
+import {
   addFirstPerson,
   addRelativeWithResult,
+  appendSaveHistory,
   createEmptyTree,
   deletePerson,
   getDisplayName,
@@ -60,6 +74,7 @@ interface AppState {
   exportedRevision: number | null
   exportedAt: Date | null
   exportTarget: ExportTarget | null
+  driveSource: GoogleDriveSource | null
   loadedFromFile: boolean
   viewKey: number
   undo: {
@@ -85,7 +100,8 @@ type AppAction =
   | { type: 'undo-change' }
   | { type: 'clear-undo' }
   | {
-      type: 'export-started'
+      type: 'save-complete'
+      tree: FamilyTree
       exportedAt: Date
       exportTarget: ExportTarget
     }
@@ -94,6 +110,7 @@ type AppAction =
       type: 'imported'
       tree: FamilyTree
       exportTarget: ExportTarget | null
+      driveSource: GoogleDriveSource | null
     }
 
 function reducer(state: AppState, action: AppAction): AppState {
@@ -106,6 +123,7 @@ function reducer(state: AppState, action: AppAction): AppState {
         exportedRevision: state.exportedRevision,
         exportedAt: state.exportedAt,
         exportTarget: null,
+        driveSource: null,
         loadedFromFile: false,
         viewKey: state.viewKey,
         undo: null,
@@ -188,15 +206,19 @@ function reducer(state: AppState, action: AppAction): AppState {
       }
     case 'clear-undo':
       return state.undo ? { ...state, undo: null } : state
-    case 'export-started':
+    case 'save-complete': {
+      const revision = state.revision + 1
       return {
         ...state,
+        tree: action.tree,
+        revision,
         exportTarget: action.exportTarget,
-        exportedRevision: state.revision,
+        exportedRevision: revision,
         exportedAt: action.exportedAt,
         loadedFromFile: false,
         hasUnexportedEditOrDelete: false,
       }
+    }
     case 'forget-export-handle':
       return state.exportTarget?.handle
         ? {
@@ -216,6 +238,7 @@ function reducer(state: AppState, action: AppAction): AppState {
         exportedRevision: revision,
         exportedAt: null,
         exportTarget: action.exportTarget,
+        driveSource: action.driveSource,
         loadedFromFile: true,
         viewKey: state.viewKey + 1,
         undo: null,
@@ -234,6 +257,7 @@ function App() {
     exportedRevision: null,
     exportedAt: null,
     exportTarget: null,
+    driveSource: null,
     loadedFromFile: false,
     viewKey: 0,
     undo: null,
@@ -247,13 +271,23 @@ function App() {
       window.innerWidth,
     ),
   )
+  const [showDriveLinkDialog, setShowDriveLinkDialog] = useState(false)
+  const [driveLinkBusy, setDriveLinkBusy] = useState(false)
+  const [driveAuthToken, setDriveAuthToken] = useState<GoogleDriveAuthToken | null>(
+    null,
+  )
   const [pendingImport, setPendingImport] = useState<{
     tree: FamilyTree
     fileName: string
+    exportTarget: ExportTarget | null
+    driveSource: GoogleDriveSource | null
   } | null>(null)
   const [pendingExport, setPendingExport] = useState<{
     text: string
     suggestedName: string
+    tree: FamilyTree
+    exportTarget: ExportTarget
+    savedAt: Date
   } | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
@@ -277,6 +311,8 @@ function App() {
     hasTree &&
     !state.loadedFromFile &&
     isTreeDirty(state.revision, state.exportedRevision)
+  const hasValidDriveToken =
+    driveAuthToken !== null && driveAuthToken.expiresAt > Date.now() + 5_000
 
   useEffect(() => {
     document.title = t('documentTitle')
@@ -531,19 +567,15 @@ function App() {
     }
   }
 
-  function finishExport(
+  function finishSave(
     target: ExportTarget,
     updated: boolean,
+    tree: FamilyTree,
+    savedAt: Date,
     duplicateHint = false,
   ) {
-    const exportedAt = new Date()
-    dispatch({ type: 'export-started', exportedAt, exportTarget: target })
-    showToast({
-      kind: 'export-success',
-      filename: target.name,
-      updated,
-      duplicateHint,
-    })
+    dispatch({ type: 'save-complete', exportedAt: savedAt, exportTarget: target, tree })
+    showToast({ kind: 'export-success', filename: target.name, updated, duplicateHint })
   }
 
   function handleExportError(error: unknown) {
@@ -561,22 +593,53 @@ function App() {
     showToast({ kind: 'export-error' })
   }
 
+  async function ensureDriveAccessToken(): Promise<string | null> {
+    if (driveAuthToken && driveAuthToken.expiresAt > Date.now() + 5_000) {
+      return driveAuthToken.accessToken
+    }
+    try {
+      const token = await signInToGoogleDrive(
+        import.meta.env.VITE_GOOGLE_DRIVE_CLIENT_ID,
+        import.meta.env.BASE_URL,
+      )
+      setDriveAuthToken(token)
+      return token.accessToken
+    } catch (error) {
+      const code =
+        error instanceof GoogleDriveAuthError ? error.code : 'authFailed'
+      if (code === 'notConfigured') {
+        showToast({ kind: 'drive-config-error' })
+      } else if (code !== 'cancelled') {
+        showToast({ kind: 'drive-sign-in-failed' })
+      }
+      return null
+    }
+  }
+
   function exportTree(forcePicker = false) {
     if (exportBusyRef.current || !hasTree) return
     exportBusyRef.current = true
     setExportBusy(true)
 
+    const savedAt = new Date()
+    const treeToSave = appendSaveHistory(state.tree, 'localExport', savedAt)
     let text: string
     try {
-      text = serializeTree(state.tree)
+      text = serializeTree(treeToSave)
     } catch (error) {
       handleExportError(error)
       releaseExportBusy()
       return
     }
 
+    const driveSuggestedTarget = state.driveSource
+      ? normalizeFileName(state.driveSource.fileName)
+      : null
     const suggestedName =
-      state.exportTarget?.name ?? buildExportFilename(new Date())
+      state.exportTarget?.name ??
+      (driveSuggestedTarget?.ok
+        ? driveSuggestedTarget.name
+        : buildExportFilename(savedAt))
     const picker = getBrowserSaveFilePicker()
     if (picker) {
       void exportWithFileSystemAccess({
@@ -589,7 +652,7 @@ function App() {
       })
         .then((result) => {
           if (result.kind === 'cancelled') return
-          finishExport(result.target, result.updated)
+          finishSave(result.target, result.updated, treeToSave, savedAt)
         })
         .catch((error: unknown) => {
           if (error instanceof FileExportError && error.forgetHandle) {
@@ -602,13 +665,19 @@ function App() {
     }
 
     if (forcePicker || !state.exportTarget?.confirmed) {
-      setPendingExport({ text, suggestedName })
+      setPendingExport({
+        text,
+        suggestedName,
+        tree: treeToSave,
+        exportTarget: { name: suggestedName, confirmed: true },
+        savedAt,
+      })
       return
     }
 
     try {
       startTreeDownload(text, state.exportTarget.name)
-      finishExport(state.exportTarget, false, true)
+      finishSave(state.exportTarget, false, treeToSave, savedAt, true)
     } catch (error) {
       handleExportError(error)
     } finally {
@@ -616,11 +685,77 @@ function App() {
     }
   }
 
+  function saveToDrive() {
+    if (exportBusyRef.current || !hasTree || !state.driveSource) return
+    const driveSource = state.driveSource
+    exportBusyRef.current = true
+    setExportBusy(true)
+    void ensureDriveAccessToken()
+      .then((accessToken) => {
+        if (!accessToken) return
+        if (!driveSource.canEdit) {
+          showToast({ kind: 'drive-read-only' })
+          return
+        }
+        const savedAt = new Date()
+        const treeToSave = appendSaveHistory(state.tree, 'googleDrive', savedAt)
+        const text = serializeTree(treeToSave)
+        return saveTreeToGoogleDriveFile(
+          driveSource.fileId,
+          accessToken,
+          text,
+        ).then(() => {
+          finishSave(
+            {
+              name: driveSource.fileName,
+              confirmed: false,
+            },
+            true,
+            treeToSave,
+            savedAt,
+          )
+        })
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ZodError) {
+          handleExportError(error)
+          return
+        }
+        if (error instanceof GoogleDriveError) {
+          if (error.code === 'permissionDenied') {
+            showToast({ kind: 'drive-read-only' })
+            return
+          }
+          if (error.code === 'authRequired') {
+            showToast({ kind: 'drive-sign-in-failed' })
+            return
+          }
+          showToast({ kind: 'drive-save-error' })
+          return
+        }
+        handleExportError(error)
+      })
+      .finally(() => releaseExportBusy())
+  }
+
+  function saveTree() {
+    if (state.driveSource) {
+      saveToDrive()
+      return
+    }
+    exportTree()
+  }
+
   function exportNamedFile(filename: string) {
     if (!pendingExport) return
     try {
       startTreeDownload(pendingExport.text, filename)
-      finishExport({ name: filename, confirmed: true }, false)
+      finishSave(
+        { ...pendingExport.exportTarget, name: filename },
+        false,
+        pendingExport.tree,
+        pendingExport.savedAt,
+      )
       setPendingExport(null)
       releaseExportBusy(true)
     } catch (error) {
@@ -635,14 +770,22 @@ function App() {
     releaseExportBusy(true)
   }
 
-  function applyImport(imported: { tree: FamilyTree; fileName: string }) {
+  function applyImport(imported: {
+    tree: FamilyTree
+    fileName: string
+    exportTarget: ExportTarget | null
+    driveSource: GoogleDriveSource | null
+  }) {
     clearToast()
     dispatch({
       type: 'imported',
       tree: imported.tree,
-      exportTarget: getImportedExportTarget(imported.fileName),
+      exportTarget: imported.exportTarget,
+      driveSource: imported.driveSource,
     })
     setPendingImport(null)
+    setShowDriveLinkDialog(false)
+    setDriveLinkBusy(false)
     setShowNewTreeDialog(false)
     showToast({ kind: 'import-success', count: imported.tree.nodes.length })
   }
@@ -655,14 +798,69 @@ function App() {
         showToast({ kind: 'import-error' })
         return
       }
-      const imported = { tree: result.tree, fileName: file.name }
+      const imported = {
+        tree: result.tree,
+        fileName: file.name,
+        exportTarget: getImportedExportTarget(file.name),
+        driveSource: null,
+      }
       if (hasUnexportedChanges) {
+        setShowDriveLinkDialog(false)
         setPendingImport(imported)
         return
       }
       applyImport(imported)
     } catch {
       showToast({ kind: 'import-error' })
+    }
+  }
+
+  async function importFromDriveLink(link: string) {
+    if (driveLinkBusy) return
+    setDriveLinkBusy(true)
+    const accessToken = await ensureDriveAccessToken()
+    if (!accessToken) {
+      setDriveLinkBusy(false)
+      return
+    }
+    try {
+      const importedFromDrive = await loadTreeFromGoogleDriveLink(
+        link,
+        accessToken,
+      )
+      const fileNameResult = normalizeFileName(importedFromDrive.source.fileName)
+      const imported = {
+        tree: importedFromDrive.tree,
+        fileName: importedFromDrive.source.fileName,
+        exportTarget: fileNameResult.ok
+          ? { name: fileNameResult.name, confirmed: false }
+          : null,
+        driveSource: importedFromDrive.source,
+      }
+      if (hasUnexportedChanges) {
+        setPendingImport(imported)
+        return
+      }
+      applyImport(imported)
+    } catch (error) {
+      if (error instanceof GoogleDriveError) {
+        if (error.code === 'invalidLink') showToast({ kind: 'drive-link-error' })
+        else if (error.code === 'permissionDenied' || error.code === 'notFound') {
+          showToast({ kind: 'drive-open-access-error' })
+        } else if (error.code === 'invalidJson') {
+          showToast({ kind: 'drive-open-json-error' })
+        } else if (error.code === 'invalidSchema') {
+          showToast({ kind: 'drive-open-schema-error' })
+        } else if (error.code === 'authRequired') {
+          showToast({ kind: 'drive-sign-in-failed' })
+        } else {
+          showToast({ kind: 'drive-open-error' })
+        }
+      } else {
+        showToast({ kind: 'drive-open-error' })
+      }
+    } finally {
+      setDriveLinkBusy(false)
     }
   }
 
@@ -679,7 +877,9 @@ function App() {
 
   const statusText =
     status === 'loaded'
-      ? t('exportStatusLoaded')
+      ? state.driveSource
+        ? t('exportStatusLoadedDrive')
+        : t('exportStatusLoaded')
       : status === 'never'
         ? t('exportStatusNever')
         : status === 'dirty'
@@ -692,6 +892,16 @@ function App() {
                   }).format(state.exportedAt)
                 : '',
             })
+  const sourceText = state.driveSource
+    ? t('sourceDrive', { filename: state.driveSource.fileName })
+    : t('sourceLocal')
+  const driveConnectionText = state.driveSource
+    ? !hasValidDriveToken
+      ? t('driveConnectionSignedOut')
+      : state.driveSource.canEdit
+        ? t('driveConnectionEditable')
+        : t('driveConnectionReadOnly')
+    : null
 
   return (
     <div className="app-shell">
@@ -706,6 +916,10 @@ function App() {
               <span className="export-status" aria-live="polite">
                 {statusText}
               </span>
+              <span className="export-source" aria-live="polite">
+                {sourceText}
+                {driveConnectionText ? ` · ${driveConnectionText}` : ''}
+              </span>
               <button
                 ref={importButtonRef}
                 className="button button--ghost import-button"
@@ -716,14 +930,26 @@ function App() {
                 {t('importButton')}
               </button>
               <button
+                className="button button--ghost import-button"
+                type="button"
+                aria-label={t('driveLink.openButtonLabel')}
+                onClick={() => setShowDriveLinkDialog(true)}
+              >
+                {t('driveLink.openButton')}
+              </button>
+              <button
                 ref={exportButtonRef}
                 className={`button button--ghost export-button${status === 'never' || status === 'dirty' ? ' export-button--dirty' : ''}`}
                 type="button"
                 disabled={exportBusy}
-                aria-label={t('exportButtonLabel')}
-                onClick={() => exportTree()}
+                aria-label={
+                  state.driveSource
+                    ? t('driveSaveButtonLabel')
+                    : t('exportButtonLabel')
+                }
+                onClick={saveTree}
               >
-                {t('exportButton')}
+                {state.driveSource ? t('driveSaveButton') : t('exportButton')}
               </button>
               <button
                 className="button button--ghost timeline-button"
@@ -765,7 +991,7 @@ function App() {
                         exportTree(true)
                       }}
                     >
-                      {t('exportAs')}
+                      {state.driveSource ? t('exportLocalAs') : t('exportAs')}
                     </button>
                   </div>
                 )}
@@ -842,6 +1068,14 @@ function App() {
               >
                 {t('importFile')}
               </button>
+              <button
+                className="button button--ghost"
+                type="button"
+                aria-label={t('driveLink.openButtonLabel')}
+                onClick={() => setShowDriveLinkDialog(true)}
+              >
+                {t('driveLink.openButton')}
+              </button>
             </div>
           </div>
         </main>
@@ -886,6 +1120,17 @@ function App() {
         <ReplaceTreeDialog
           onReplace={() => applyImport(pendingImport)}
           onCancel={cancelImportConfirmation}
+        />
+      )}
+      {showDriveLinkDialog && (
+        <DriveLinkDialog
+          busy={driveLinkBusy}
+          onOpen={(link) => {
+            void importFromDriveLink(link)
+          }}
+          onCancel={() => {
+            if (!driveLinkBusy) setShowDriveLinkDialog(false)
+          }}
         />
       )}
       {showTimeline && (

@@ -8,7 +8,7 @@ import {
   startTreeDownload,
   type SaveFileHandle,
 } from './exportTree'
-import { TreeSchema } from '../model/tree'
+import { appendSaveHistory, TreeSchema } from '../model/tree'
 import { parseTreeFile } from './importTree'
 
 describe('normalizeFileName', () => {
@@ -354,11 +354,43 @@ describe('serializeTree', () => {
       ],
       edges: [{ from: 'second', to: 'first', type: 'child' }],
     })
+
     expect(serialized.indexOf('"second"')).toBeLessThan(
       serialized.indexOf('"first"'),
     )
     expect(serialized).not.toContain('selectedId')
     expect(serialized).not.toContain('revision')
+  })
+
+  it('appends one save history entry per successful save target', () => {
+    const start = {
+      version: 1 as const,
+      nodes: [
+        {
+          id: 'person-1',
+          data: { firstName: 'Anna' },
+          metaData: { layer: 0, order: 0 },
+        },
+      ],
+      edges: [],
+    }
+    const first = appendSaveHistory(
+      start,
+      'googleDrive',
+      new Date('2026-11-12T20:00:00.000Z'),
+    )
+    const second = appendSaveHistory(
+      first,
+      'localExport',
+      new Date('2026-11-12T20:01:00.000Z'),
+    )
+    const exported = JSON.parse(serializeTree(second)) as {
+      metaData: { saveHistory: Array<{ savedAt: string; target: string }> }
+    }
+    expect(exported.metaData.saveHistory).toEqual([
+      { savedAt: '2026-11-12T20:00:00.000Z', target: 'googleDrive' },
+      { savedAt: '2026-11-12T20:01:00.000Z', target: 'localExport' },
+    ])
   })
 
   it('rejects invalid data before serialization', () => {

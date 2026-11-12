@@ -1,7 +1,7 @@
 # Family Tree JSON file format
 
 Exported files are UTF-8 JSON with two-space indentation and a trailing newline.
-They contain the tree itself, not interface state or export timestamps.
+They contain the tree itself, not interface state.
 
 ## Export behavior by browser
 
@@ -20,6 +20,9 @@ or confirm the export target.
 ## Fields
 
 - `version` is the format version. The current version is `1`.
+- `metaData.saveHistory` is optional. When present, it is an array where each
+  entry includes `savedAt` (ISO timestamp) and `target` (`googleDrive` or
+  `localExport`). The app appends one entry on every successful save.
 - `nodes` is an array of people in creation order. Each node has a unique `id`
   and a `data` object containing a required `firstName` and an optional
   `lastName`, `gender`, `dateOfBirth`, and `dateOfDeath`, plus required

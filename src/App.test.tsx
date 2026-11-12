@@ -389,7 +389,21 @@ describe('start tree and add a relative', () => {
     await user.click(screen.getByRole('button', { name: 'Export' }))
     await waitFor(() => expect(createObjectURL).toHaveBeenCalledOnce())
     const exported = createObjectURL.mock.calls[0]![0] as Blob
-    expect(await exported.text()).toBe(validTreeFile)
+    const exportedTree = JSON.parse(await exported.text()) as {
+      nodes: unknown[]
+      edges: unknown[]
+      metaData?: {
+        saveHistory?: Array<{ target: string; savedAt: string }>
+      }
+    }
+    const importedTree = JSON.parse(validTreeFile) as {
+      nodes: unknown[]
+      edges: unknown[]
+    }
+    expect(exportedTree.nodes).toEqual(importedTree.nodes)
+    expect(exportedTree.edges).toEqual(importedTree.edges)
+    expect(exportedTree.metaData?.saveHistory).toHaveLength(1)
+    expect(exportedTree.metaData?.saveHistory?.[0]?.target).toBe('localExport')
   })
 
   it('keeps a manual gender and restores optional details with edit Undo', async () => {
