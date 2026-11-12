@@ -14,6 +14,7 @@ import { InlineNodeControls, NodeActions } from './NodeActions'
 import {
   computeLayout,
   LAYOUT_SPACING,
+  type LayoutOrientation,
   type Point,
 } from '../layout/computeLayout'
 import {
@@ -52,6 +53,7 @@ import {
 
 interface TreeViewProps {
   tree: FamilyTree
+  orientation: LayoutOrientation
   selectedId: string | null
   onSelect: (id: string | null) => void
   onAddRelative: (
@@ -99,6 +101,7 @@ const maxZoom = 2
 
 export default function TreeView({
   tree,
+  orientation,
   selectedId,
   onSelect,
   onAddRelative,
@@ -112,8 +115,8 @@ export default function TreeView({
     window.innerWidth < 640 ? 160 : 200,
   )
   const layout = useMemo(
-    () => computeLayout(tree, cardWidth),
-    [tree, cardWidth],
+    () => computeLayout(tree, cardWidth, orientation),
+    [tree, cardWidth, orientation],
   )
   const peopleByLayer = useMemo(() => {
     const rows = new Map<number, PersonNode[]>()
@@ -136,6 +139,7 @@ export default function TreeView({
   const userMovedRef = useRef(false)
   const pointerMovedRef = useRef(false)
   const previousTreeRef = useRef<FamilyTree | null>(null)
+  const previousOrientationRef = useRef<LayoutOrientation>(orientation)
   const pointers = useRef(new Map<number, Point>())
   const panStart = useRef<{ pointer: Point; viewport: typeof viewport } | null>(
     null,
@@ -385,19 +389,29 @@ export default function TreeView({
         )
         return {
           layer,
-          y:
+          coordinate:
             row.reduce(
               (sum, person) =>
                 sum +
-                (layout.positions[person.id]?.y ?? 0) +
-                LAYOUT_SPACING.cardHeight / 2,
+                (orientation === 'vertical'
+                  ? (layout.positions[person.id]?.y ?? 0) +
+                    LAYOUT_SPACING.cardHeight / 2
+                  : (layout.positions[person.id]?.x ?? 0) + cardWidth / 2),
               0,
             ) / Math.max(1, row.length),
         }
       })
       const targetLayer =
         rowCenters.sort(
-          (a, b) => Math.abs(a.y - world.y) - Math.abs(b.y - world.y),
+          (a, b) =>
+            Math.abs(
+              a.coordinate -
+                (orientation === 'vertical' ? world.y : world.x),
+            ) -
+            Math.abs(
+              b.coordinate -
+                (orientation === 'vertical' ? world.y : world.x),
+            ),
         )[0]?.layer ?? current.targetLayer
       setDragPreview({
         ...current,
@@ -408,7 +422,9 @@ export default function TreeView({
       })
     },
     [
+      cardWidth,
       layout.positions,
+      orientation,
       setDragPreview,
       tree.nodes,
       viewport.scale,
@@ -434,34 +450,43 @@ export default function TreeView({
     })
   }, [layout, tree.nodes.length])
 
+  const keepSelectedVisible = useCallback(() => {
+    if (!selectedId) return false
+    const canvas = canvasRef.current
+    const point = layout.positions[selectedId]
+    if (!canvas || !point) return false
+    const { width, height } = canvas.getBoundingClientRect()
+    setViewport((current) => {
+      let x = current.x
+      let y = current.y
+      const left = x + point.x * current.scale
+      const top = y + point.y * current.scale
+      const right = left + cardWidth * current.scale
+      const bottom = top + LAYOUT_SPACING.cardHeight * current.scale
+      if (right > width - 24) x -= right - width + 24
+      if (left < 24) x += 24 - left
+      if (bottom > height - 24) y -= bottom - height + 24
+      if (top < 24) y += 24 - top
+      return { ...current, x, y }
+    })
+    return true
+  }, [cardWidth, layout.positions, selectedId])
+
   useEffect(() => {
     if (tree !== previousTreeRef.current) {
-      if (previousTreeRef.current && userMovedRef.current && selectedId) {
-        const canvas = canvasRef.current
-        const point = layout.positions[selectedId]
-        if (canvas && point) {
-          const { width, height } = canvas.getBoundingClientRect()
-          setViewport((current) => {
-            let x = current.x
-            let y = current.y
-            const left = x + point.x * current.scale
-            const top = y + point.y * current.scale
-            const right = left + cardWidth * current.scale
-            const bottom = top + LAYOUT_SPACING.cardHeight * current.scale
-            if (right > width - 24) x -= right - width + 24
-            if (left < 24) x += 24 - left
-            if (bottom > height - 24) y -= bottom - height + 24
-            if (top < 24) y += 24 - top
-            return { ...current, x, y }
-          })
-        }
-      } else {
+      if (!(previousTreeRef.current && userMovedRef.current && keepSelectedVisible())) {
         fitToScreen()
       }
       previousTreeRef.current = tree
       userMovedRef.current = false
     }
-  }, [tree, selectedId, layout, cardWidth, fitToScreen])
+  }, [tree, fitToScreen, keepSelectedVisible])
+
+  useEffect(() => {
+    if (previousOrientationRef.current === orientation) return
+    if (!keepSelectedVisible()) fitToScreen()
+    previousOrientationRef.current = orientation
+  }, [fitToScreen, keepSelectedVisible, orientation])
 
   useEffect(() => {
     const onResize = () => setCardWidth(window.innerWidth < 640 ? 160 : 200)
@@ -1232,24 +1257,49 @@ export default function TreeView({
             <div
               className="drag-insertion-line"
               style={{
-                left:
-                  (drag.pointer.x - viewport.x) / viewport.scale -
-                  LAYOUT_SPACING.lineInset,
-                top:
-                  (tree.nodes.find(
-                    (person) =>
-                      drag.partIds.includes(person.id) &&
-                      person.metaData.layer === drag.targetLayer,
-                  )
-                    ? layout.positions[
-                        tree.nodes.find(
+                ...(orientation === 'vertical'
+                  ? {
+                      left:
+                        (drag.pointer.x - viewport.x) / viewport.scale -
+                        LAYOUT_SPACING.lineInset,
+                      top:
+                        (tree.nodes.find(
                           (person) =>
                             drag.partIds.includes(person.id) &&
                             person.metaData.layer === drag.targetLayer,
-                        )!.id
-                      ]!.y
-                    : 0) - 12,
-                height: LAYOUT_SPACING.cardHeight + 24,
+                        )
+                          ? layout.positions[
+                              tree.nodes.find(
+                                (person) =>
+                                  drag.partIds.includes(person.id) &&
+                                  person.metaData.layer === drag.targetLayer,
+                              )!.id
+                            ]!.y
+                          : 0) - 12,
+                      width: 2,
+                      height: LAYOUT_SPACING.cardHeight + 24,
+                    }
+                  : {
+                      left:
+                        (tree.nodes.find(
+                          (person) =>
+                            drag.partIds.includes(person.id) &&
+                            person.metaData.layer === drag.targetLayer,
+                        )
+                          ? layout.positions[
+                              tree.nodes.find(
+                                (person) =>
+                                  drag.partIds.includes(person.id) &&
+                                  person.metaData.layer === drag.targetLayer,
+                              )!.id
+                            ]!.x
+                          : 0) - 12,
+                      top:
+                        (drag.pointer.y - viewport.y) / viewport.scale -
+                        LAYOUT_SPACING.lineInset,
+                      width: cardWidth + 24,
+                      height: 2,
+                    }),
               }}
               aria-hidden="true"
             />

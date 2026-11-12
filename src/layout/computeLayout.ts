@@ -36,6 +36,8 @@ export interface LayoutResult {
   height: number
 }
 
+export type LayoutOrientation = 'vertical' | 'horizontal'
+
 const { cardHeight: CARD_HEIGHT } = LAYOUT_SPACING
 
 interface SiblingGroup {
@@ -53,7 +55,18 @@ interface Family {
   lane: number
 }
 
-export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
+export function computeLayout(
+  tree: FamilyTree,
+  cardWidth = 200,
+  orientation: LayoutOrientation = 'vertical',
+): LayoutResult {
+  const layout = computeVerticalLayout(tree, cardWidth)
+  return orientation === 'horizontal'
+    ? transposeLayout(layout, cardWidth)
+    : layout
+}
+
+function computeVerticalLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
   const parts = getConnectedParts(tree)
   if (parts.length === 0) {
     return {
@@ -81,7 +94,7 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
           (edge) => members.has(edge.from) && members.has(edge.to),
         ),
       }
-      const partLayout = computeLayout(partTree, cardWidth)
+      const partLayout = computeVerticalLayout(partTree, cardWidth)
       for (const [id, point] of Object.entries(partLayout.positions)) {
         positions[id] = { ...point, x: point.x + offset }
         cardCenters[id] = {
@@ -593,6 +606,71 @@ export function computeLayout(tree: FamilyTree, cardWidth = 200): LayoutResult {
       CARD_HEIGHT +
       LAYOUT_SPACING.margin,
   }
+}
+
+function transposeLayout(layout: LayoutResult, cardWidth: number): LayoutResult {
+  const positions = Object.fromEntries(
+    Object.entries(layout.positions).map(([id, point]) => [
+      id,
+      { x: point.y, y: point.x },
+    ]),
+  )
+  const cardCenters = Object.fromEntries(
+    Object.entries(positions).map(([id, point]) => [
+      id,
+      { x: point.x + cardWidth / 2, y: point.y + CARD_HEIGHT / 2 },
+    ]),
+  )
+  return {
+    positions,
+    cardCenters,
+    rowBands: layout.rowBands.map((band) => ({
+      ...band,
+      left: band.top,
+      top: band.left,
+      width: band.height,
+      height: band.width,
+    })),
+    edgePaths: layout.edgePaths.map((line) => ({
+      ...line,
+      path: transposePath(line.path),
+      dots: line.dots.map((dot) => ({ x: dot.y, y: dot.x })),
+      ...(line.dateLabelPosition
+        ? {
+            dateLabelPosition: {
+              x: line.dateLabelPosition.y,
+              y: line.dateLabelPosition.x,
+            },
+          }
+        : {}),
+    })),
+    width: layout.height,
+    height: layout.width,
+  }
+}
+
+function transposePath(path: string): string {
+  const tokens = path.match(/[MHV]|-?(?:\d+\.?\d*|\.\d+)/g) ?? []
+  const transposed: string[] = []
+  for (let index = 0; index < tokens.length;) {
+    const command = tokens[index++]!
+    if (command === 'M') {
+      const x = Number(tokens[index++]!)
+      const y = Number(tokens[index++]!)
+      transposed.push('M', String(y), String(x))
+      continue
+    }
+    if (command === 'H') {
+      transposed.push('V', tokens[index++]!)
+      continue
+    }
+    if (command === 'V') {
+      transposed.push('H', tokens[index++]!)
+      continue
+    }
+    throw new Error(`Unsupported layout path command: ${command}`)
+  }
+  return transposed.join(' ')
 }
 
 function shiftPathHorizontally(path: string, offset: number): string {

@@ -214,6 +214,21 @@ describe('computeLayout', () => {
     expect(layout.edgePaths[0]!.path).toContain('H')
   })
 
+  it('supports horizontal orientation with generations progressing left-to-right', () => {
+    const source = tree(
+      ['parent', 'child'],
+      [{ from: 'parent', to: 'child', type: 'child' }],
+    )
+    const vertical = computeLayout(source, 200, 'vertical')
+    const horizontal = computeLayout(source, 200, 'horizontal')
+    expect(vertical.positions.parent!.y).toBeLessThan(vertical.positions.child!.y)
+    expect(horizontal.positions.parent!.x).toBeLessThan(
+      horizontal.positions.child!.x,
+    )
+    expect(horizontal.edgePaths).toHaveLength(vertical.edgePaths.length)
+    expect(computeLayout(source, 200, 'horizontal')).toEqual(horizontal)
+  })
+
   it('keeps siblings on one row and draws one bracket connector', () => {
     const layout = computeLayout(
       tree(['one', 'two'], [{ from: 'one', to: 'two', type: 'sibling' }]),

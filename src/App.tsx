@@ -39,6 +39,19 @@ import {
   type PersonName,
 } from './model/tree'
 import { getExportStatus, isTreeDirty } from './state/exportStatus'
+import { type LayoutOrientation } from './layout/computeLayout'
+
+const orientationStorageKey = 'family-tree-orientation'
+
+function detectInitialOrientation(
+  savedOrientation: string | null,
+  viewportWidth: number,
+): LayoutOrientation {
+  if (savedOrientation === 'horizontal' || savedOrientation === 'vertical') {
+    return savedOrientation
+  }
+  return viewportWidth < 640 ? 'vertical' : 'horizontal'
+}
 
 interface AppState {
   tree: FamilyTree
@@ -228,6 +241,12 @@ function App() {
   })
   const [showNewTreeDialog, setShowNewTreeDialog] = useState(false)
   const [showTimeline, setShowTimeline] = useState(false)
+  const [orientation, setOrientation] = useState<LayoutOrientation>(() =>
+    detectInitialOrientation(
+      window.localStorage.getItem(orientationStorageKey),
+      window.innerWidth,
+    ),
+  )
   const [pendingImport, setPendingImport] = useState<{
     tree: FamilyTree
     fileName: string
@@ -334,6 +353,11 @@ function App() {
   const changeLanguage = (language: 'en' | 'pl') => {
     window.localStorage.setItem('family-tree-language', language)
     void i18n.changeLanguage(language)
+  }
+
+  const changeOrientation = (nextOrientation: LayoutOrientation) => {
+    setOrientation(nextOrientation)
+    window.localStorage.setItem(orientationStorageKey, nextOrientation)
   }
 
   function createTree(name: PersonName) {
@@ -749,6 +773,29 @@ function App() {
             </div>
           )}
           <div
+            className="orientation-toggle"
+            role="group"
+            aria-label={t('orientation.label')}
+          >
+            <button
+              type="button"
+              aria-label={t('orientation.vertical')}
+              aria-pressed={orientation === 'vertical'}
+              onClick={() => changeOrientation('vertical')}
+            >
+              {t('orientation.verticalShort')}
+            </button>
+            <span aria-hidden="true">|</span>
+            <button
+              type="button"
+              aria-label={t('orientation.horizontal')}
+              aria-pressed={orientation === 'horizontal'}
+              onClick={() => changeOrientation('horizontal')}
+            >
+              {t('orientation.horizontalShort')}
+            </button>
+          </div>
+          <div
             className="language-toggle"
             role="group"
             aria-label={t('language')}
@@ -803,6 +850,7 @@ function App() {
           <TreeView
             key={state.viewKey}
             tree={state.tree}
+            orientation={orientation}
             selectedId={state.selectedId}
             onSelect={(selectedId) => dispatch({ type: 'select', selectedId })}
             onAddRelative={createRelative}

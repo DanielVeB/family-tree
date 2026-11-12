@@ -22,7 +22,67 @@ afterEach(() => {
 describe('start tree and add a relative', () => {
   beforeEach(async () => {
     window.localStorage.clear()
+    window.localStorage.setItem('family-tree-orientation', 'vertical')
+    setViewportWidth(1024)
     await i18n.changeLanguage('en')
+  })
+
+  it('uses responsive orientation defaults when no saved preference exists', async () => {
+    window.localStorage.removeItem('family-tree-orientation')
+    setViewportWidth(500)
+    render(<App />)
+    expect(screen.getByRole('button', { name: 'Vertical view' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(
+      screen.getByRole('button', { name: 'Horizontal view' }),
+    ).toHaveAttribute('aria-pressed', 'false')
+
+    cleanup()
+    window.localStorage.removeItem('family-tree-orientation')
+    setViewportWidth(900)
+    render(<App />)
+    expect(
+      screen.getByRole('button', { name: 'Horizontal view' }),
+    ).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('switches orientation without changing selection or export status, and persists it', async () => {
+    const user = userEvent.setup()
+    window.localStorage.removeItem('family-tree-orientation')
+    setViewportWidth(500)
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+    await user.type(screen.getByLabelText('First name'), 'Anna')
+    await user.click(screen.getByRole('button', { name: 'Create tree' }))
+    await user.click(screen.getByRole('button', { name: 'Anna' }))
+    await user.click(screen.getByRole('button', { name: 'Add child' }))
+    await user.type(screen.getByLabelText('First name'), 'Mia')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    const mia = screen.getByRole('button', { name: 'Mia' })
+    expect(mia).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Not exported yet')).toBeInTheDocument()
+    const verticalBefore = getCardPosition('Anna')
+    const verticalAfter = getCardPosition('Mia')
+    expect(verticalAfter.top).toBeGreaterThan(verticalBefore.top)
+
+    await user.click(screen.getByRole('button', { name: 'Horizontal view' }))
+    expect(mia).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Not exported yet')).toBeInTheDocument()
+    const horizontalBefore = getCardPosition('Anna')
+    const horizontalAfter = getCardPosition('Mia')
+    expect(horizontalAfter.left).toBeGreaterThan(horizontalBefore.left)
+    expect(window.localStorage.getItem('family-tree-orientation')).toBe(
+      'horizontal',
+    )
+
+    cleanup()
+    render(<App />)
+    expect(
+      screen.getByRole('button', { name: 'Horizontal view' }),
+    ).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('opens the read-only timeline without changing the selected person or export status', async () => {
@@ -1008,6 +1068,7 @@ describe('start tree and add a relative', () => {
 describe('edit and delete people', () => {
   beforeEach(async () => {
     window.localStorage.clear()
+    window.localStorage.setItem('family-tree-orientation', 'vertical')
     await i18n.changeLanguage('en')
   })
 
@@ -1326,6 +1387,25 @@ function makeFile(
   })
   Object.defineProperty(file, 'text', { value: readText })
   return file
+}
+
+function setViewportWidth(width: number) {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    writable: true,
+    value: width,
+  })
+}
+
+function getCardPosition(name: string) {
+  const card = screen
+    .getByRole('button', { name })
+    .closest<HTMLElement>('.person-card')
+  if (!card) throw new Error(`Missing card for ${name}`)
+  return {
+    left: Number.parseFloat(card.style.left || '0'),
+    top: Number.parseFloat(card.style.top || '0'),
+  }
 }
 
 function getPersonActionButton(
