@@ -113,17 +113,17 @@ A small muted text (caption style, `--muted`) next to the Export button, plus an
 
 ## 6. Language and Text (English / Polish)
 
-| Key | English | Polish |
-|-----|---------|--------|
-| export.button | Export | Eksportuj |
-| export.buttonLabel | Export tree as a file | Eksportuj drzewo do pliku |
-| export.status.never | Not exported yet | Jeszcze nie wyeksportowano |
-| export.status.dirty | Changes not exported | Zmiany nie zostały wyeksportowane |
-| export.status.done | Exported at {{time}} | Wyeksportowano o {{time}} |
-| export.toast.title | Exported as {{filename}} | Wyeksportowano jako {{filename}} |
+| Key | English | Polish                                                                         |
+|-----|---------|--------------------------------------------------------------------------------|
+| export.button | Export | Eksportuj                                                                      |
+| export.buttonLabel | Export tree as a file | Eksportuj drzewo do pliku                                                      |
+| export.status.never | Not exported yet | Jeszcze nie zapisano                                                           |
+| export.status.dirty | Changes not exported | Zmiany nie zostały zapisane                                                    |
+| export.status.done | Exported at {{time}} | Wyeksportowano o {{time}}                                                      |
+| export.toast.title | Exported as {{filename}} | Wyeksportowano jako {{filename}}                                               |
 | export.toast.privacy | The file contains the names from your tree. Share it only with people you trust. | Plik zawiera dane osób z Twojego drzewa. Udostępniaj go tylko zaufanym osobom. |
-| export.toast.close | Close notification | Zamknij powiadomienie |
-| export.error | The file could not be created. Your tree is unchanged, please try again. | Nie udało się utworzyć pliku. Drzewo nie zostało zmienione, spróbuj ponownie. |
+| export.toast.close | Close notification | Zamknij powiadomienie                                                          |
+| export.error | The file could not be created. Your tree is unchanged, please try again. | Nie udało się utworzyć pliku. Drzewo nie zostało zmienione, spróbuj ponownie.  |
 
 All strings go through the translation layer. Switching language while a toast is visible updates the toast text immediately. The file itself never contains translated text.
 

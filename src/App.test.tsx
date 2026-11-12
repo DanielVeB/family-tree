@@ -495,7 +495,7 @@ describe('start tree and add a relative', () => {
     ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Maja' })).toBeInTheDocument()
     expect(
-      screen.getByText('Zmiany nie zostały wyeksportowane'),
+      screen.getByText('Zmiany nie zostały zapisane'),
     ).toBeInTheDocument()
     await waitFor(() => {
       expect(
@@ -758,9 +758,9 @@ describe('start tree and add a relative', () => {
     expect(downloadLink.download).toBe('Rodzina Łukasz Żółtowski.json')
     await user.click(screen.getByRole('button', { name: 'PL' }))
     expect(
-      screen.getByText('Wyeksportowano jako Rodzina Łukasz Żółtowski.json'),
+      screen.getByText('Zapisano jako Rodzina Łukasz Żółtowski.json'),
     ).toBeInTheDocument()
-    expect(screen.getByText(/^Wyeksportowano o/)).toBeInTheDocument()
+    expect(screen.getByText(/^Zapisano o/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'EN' }))
 
     const afterExport = new Event('beforeunload', { cancelable: true })
@@ -929,11 +929,11 @@ describe('start tree and add a relative', () => {
     expect(screen.getByLabelText('Nazwa pliku')).toHaveValue('Łukasz Żółtowski')
     await user.keyboard('{Enter}')
     expect(
-      screen.getByText('Wyeksportowano jako Łukasz Żółtowski.json'),
+      screen.getByText('Zapisano jako Łukasz Żółtowski.json'),
     ).toBeInTheDocument()
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Eksportuj drzewo do pliku' }),
+        screen.getByRole('button', { name: 'Zapisz drzewo do pliku' }),
       ).toHaveFocus(),
     )
   })
@@ -1061,7 +1061,7 @@ describe('edit and delete people', () => {
     await user.click(screen.getByRole('button', { name: 'Mia' }))
     expect(screen.getAllByText('Łucja Żółć')).toHaveLength(1)
     expect(
-      screen.getByText('Zmiany nie zostały wyeksportowane'),
+      screen.getByText('Zmiany nie zostały zapisane'),
     ).toBeInTheDocument()
     expect(
       screen.getByText('Zaktualizowano imię i nazwisko'),
