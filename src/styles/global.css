@@ -1252,7 +1252,6 @@ h1 {
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   text-align: center;
-  animation: timeline-event-enter 220ms ease-out both;
 }
 
 .timeline-dialog__description {
@@ -1275,7 +1274,6 @@ h1 {
   background: var(--tint-faint);
   color: var(--oak);
   box-shadow: 0 0 0 0 var(--timeline-glow);
-  animation: timeline-marker-pulse 900ms ease-out both;
 }
 
 .timeline-dialog__marker-icon {
@@ -1293,6 +1291,57 @@ h1 {
 
 .timeline-dialog__event--marriage .timeline-dialog__marker {
   background: var(--timeline-marriage);
+}
+
+.timeline-dialog__event--exiting {
+  pointer-events: none;
+}
+
+.timeline-dialog__event--exiting.timeline-dialog__event--intent-next,
+.timeline-dialog__event--exiting.timeline-dialog__event--intent-autoplay,
+.timeline-dialog__event--exiting.timeline-dialog__event--intent-jump {
+  animation: timeline-event-exit-next 180ms ease-in both;
+}
+
+.timeline-dialog__event--exiting.timeline-dialog__event--intent-prev {
+  animation: timeline-event-exit-prev 180ms ease-in both;
+}
+
+.timeline-dialog__event--entering.timeline-dialog__event--intent-next,
+.timeline-dialog__event--entering.timeline-dialog__event--intent-autoplay,
+.timeline-dialog__event--entering.timeline-dialog__event--intent-jump {
+  animation: timeline-event-enter-next 260ms ease-out both;
+}
+
+.timeline-dialog__event--entering.timeline-dialog__event--intent-prev {
+  animation: timeline-event-enter-prev 260ms ease-out both;
+}
+
+.timeline-dialog__event--entering .timeline-dialog__marker {
+  animation: timeline-marker-pulse 800ms ease-out both;
+}
+
+.timeline-dialog__event--entering .timeline-dialog__description {
+  animation: timeline-text-rise 300ms ease-out both;
+}
+
+.timeline-dialog__event--entering .timeline-dialog__date {
+  animation: timeline-date-reveal 320ms ease-out both;
+}
+
+.timeline-dialog__event--birth.timeline-dialog__event--entering
+  .timeline-dialog__marker-icon {
+  animation: timeline-birth-twinkle 650ms ease-out both;
+}
+
+.timeline-dialog__event--death.timeline-dialog__event--entering
+  .timeline-dialog__marker-icon {
+  animation: timeline-death-settle 520ms ease-out both;
+}
+
+.timeline-dialog__event--marriage.timeline-dialog__event--entering
+  .timeline-dialog__marker-icon {
+  animation: timeline-marriage-beat 700ms ease-out both;
 }
 
 .timeline-dialog__date {
@@ -1330,14 +1379,47 @@ h1 {
   line-height: 1.5;
 }
 
-@keyframes timeline-event-enter {
+@keyframes timeline-event-enter-next {
   from {
     opacity: 0;
-    transform: translateY(8px);
+    transform: translateY(10px) scale(0.985);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes timeline-event-enter-prev {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes timeline-event-exit-next {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.992);
+  }
+}
+
+@keyframes timeline-event-exit-prev {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.992);
   }
 }
 
@@ -1350,6 +1432,71 @@ h1 {
   }
   100% {
     box-shadow: 0 0 0 0 rgba(153, 103, 54, 0);
+  }
+}
+
+@keyframes timeline-text-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes timeline-date-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes timeline-birth-twinkle {
+  0% {
+    transform: scale(0.7) rotate(-16deg);
+    opacity: 0.6;
+  }
+  65% {
+    transform: scale(1.14) rotate(8deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes timeline-death-settle {
+  0% {
+    transform: translateY(-6px);
+    opacity: 0.55;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 0.95;
+  }
+}
+
+@keyframes timeline-marriage-beat {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.7;
+  }
+  40% {
+    transform: scale(1.12);
+  }
+  75% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
   }
 }
 
@@ -1402,8 +1549,14 @@ h1 {
   .node-action-button,
   .node-move-popover,
   .timeline-dialog__event,
+  .timeline-dialog__description,
+  .timeline-dialog__date,
   .timeline-dialog__marker {
     animation: none;
+  }
+
+  .timeline-dialog__marker-icon {
+    animation: none !important;
   }
 }
 

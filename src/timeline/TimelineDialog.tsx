@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
@@ -10,6 +10,12 @@ interface TimelineDialogProps {
   tree: FamilyTree
   onClose: () => void
 }
+
+type TransitionPhase = 'idle' | 'exiting' | 'entering'
+type TransitionIntent = 'next' | 'prev' | 'jump' | 'autoplay'
+
+const EXIT_TRANSITION_MS = 180
+const ENTER_TRANSITION_MS = 260
 
 function getEventDescription(event: TimelineEvent, t: TFunction): string {
   if (event.type === 'marriage') {
@@ -29,12 +35,28 @@ function getEventIcon(type: TimelineEvent['type']): string {
   return '♡'
 }
 
+function getInitialReducedMotionPreference(): boolean {
+  return (
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
 export default function TimelineDialog({ tree, onClose }: TimelineDialogProps) {
   const { t, i18n } = useTranslation()
   const events = useMemo(() => getTimelineEvents(tree), [tree])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [manualAnnouncement, setManualAnnouncement] = useState('')
+  const [transitionPhase, setTransitionPhase] =
+    useState<TransitionPhase>('idle')
+  const [transitionIntent, setTransitionIntent] =
+    useState<TransitionIntent>('jump')
+  const [pendingIndex, setPendingIndex] = useState<number | null>(null)
+  const [pendingAnnouncement, setPendingAnnouncement] = useState(false)
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(
+    getInitialReducedMotionPreference,
+  )
   const dialogRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const previouslyFocusedRef = useRef<HTMLElement | null>(
@@ -58,29 +80,115 @@ export default function TimelineDialog({ tree, onClose }: TimelineDialogProps) {
   }, [])
 
   useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const onChange = (event: MediaQueryListEvent) =>
+      setPrefersReducedMotion(event.matches)
+    mediaQuery.addEventListener('change', onChange)
+    return () => mediaQuery.removeEventListener('change', onChange)
+  }, [])
+
+  const announceCurrentEvent = useCallback(
+    (index: number) => {
+      const event = events[index]
+      if (!event) return
+      setManualAnnouncement(
+        `${getEventDescription(event, t)}. ${formatPartialDate(event.date, i18n.language)}`,
+      )
+    },
+    [events, i18n.language, t],
+  )
+
+  const moveToIndex = useCallback(
+    (
+      index: number,
+      intent: TransitionIntent,
+      options: { pausePlayback: boolean; announce: boolean },
+    ) => {
+      const nextIndex = Math.max(0, Math.min(index, lastIndex))
+      if (options.pausePlayback) {
+        setIsPlaying(false)
+      }
+      if (nextIndex === currentIndex && transitionPhase === 'idle') return
+      setTransitionIntent(intent)
+
+      if (prefersReducedMotion || transitionPhase !== 'idle') {
+        setTransitionPhase('idle')
+        setPendingIndex(null)
+        setCurrentIndex(nextIndex)
+        if (options.announce) announceCurrentEvent(nextIndex)
+        window.requestAnimationFrame(() => contentRef.current?.focus())
+        return
+      }
+
+      setPendingIndex(nextIndex)
+      setPendingAnnouncement(options.announce)
+      setTransitionPhase('exiting')
+    },
+    [
+      announceCurrentEvent,
+      currentIndex,
+      lastIndex,
+      prefersReducedMotion,
+      transitionPhase,
+    ],
+  )
+
+  useEffect(() => {
+    if (transitionPhase !== 'exiting' || pendingIndex === null) return
+    const timer = window.setTimeout(() => {
+      setCurrentIndex(pendingIndex)
+      if (pendingAnnouncement) {
+        announceCurrentEvent(pendingIndex)
+      }
+      if (transitionIntent === 'autoplay' && pendingIndex >= lastIndex) {
+        setIsPlaying(false)
+      }
+      setTransitionPhase('entering')
+    }, EXIT_TRANSITION_MS)
+    return () => window.clearTimeout(timer)
+  }, [
+    announceCurrentEvent,
+    lastIndex,
+    pendingAnnouncement,
+    pendingIndex,
+    transitionIntent,
+    transitionPhase,
+  ])
+
+  useEffect(() => {
+    if (transitionPhase !== 'entering') return
+    const timer = window.setTimeout(() => {
+      setTransitionPhase('idle')
+      setPendingIndex(null)
+      setPendingAnnouncement(false)
+      contentRef.current?.focus()
+    }, ENTER_TRANSITION_MS)
+    return () => window.clearTimeout(timer)
+  }, [transitionPhase])
+
+  useEffect(() => {
     if (!isPlaying || !hasEvents) return
     const timer = window.setInterval(() => {
+      if (transitionPhase !== 'idle') return
       if (currentIndex >= lastIndex) {
         setIsPlaying(false)
         return
       }
-      setCurrentIndex(currentIndex + 1)
+      moveToIndex(currentIndex + 1, 'autoplay', {
+        pausePlayback: false,
+        announce: false,
+      })
     }, 5000)
     return () => window.clearInterval(timer)
-  }, [currentIndex, hasEvents, isPlaying, lastIndex])
-
-  function navigateTo(index: number) {
-    setIsPlaying(false)
-    const nextIndex = Math.max(0, Math.min(index, lastIndex))
-    setCurrentIndex(nextIndex)
-    const event = events[nextIndex]
-    setManualAnnouncement(
-      event
-        ? `${getEventDescription(event, t)}. ${formatPartialDate(event.date, i18n.language)}`
-        : '',
-    )
-    window.requestAnimationFrame(() => contentRef.current?.focus())
-  }
+  }, [
+    currentIndex,
+    hasEvents,
+    isPlaying,
+    lastIndex,
+    moveToIndex,
+    transitionPhase,
+  ])
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === 'Escape') {
@@ -121,10 +229,16 @@ export default function TimelineDialog({ tree, onClose }: TimelineDialogProps) {
     }
     if (event.key === 'ArrowLeft') {
       event.preventDefault()
-      navigateTo(currentIndex - 1)
+      moveToIndex(currentIndex - 1, 'prev', {
+        pausePlayback: true,
+        announce: true,
+      })
     } else if (event.key === 'ArrowRight') {
       event.preventDefault()
-      navigateTo(currentIndex + 1)
+      moveToIndex(currentIndex + 1, 'next', {
+        pausePlayback: true,
+        announce: true,
+      })
     }
   }
 
@@ -134,7 +248,9 @@ export default function TimelineDialog({ tree, onClose }: TimelineDialogProps) {
       setIsPlaying(false)
       return
     }
-    if (currentIndex === lastIndex) setCurrentIndex(0)
+    if (currentIndex === lastIndex) {
+      moveToIndex(0, 'jump', { pausePlayback: false, announce: false })
+    }
     setManualAnnouncement('')
     setIsPlaying(true)
   }
@@ -165,7 +281,7 @@ export default function TimelineDialog({ tree, onClose }: TimelineDialogProps) {
             <div
               key={`${currentEvent.type}-${currentEvent.date}-${currentIndex}`}
               ref={contentRef}
-              className={`timeline-dialog__event timeline-dialog__event--${currentEvent.type}`}
+              className={`timeline-dialog__event timeline-dialog__event--${currentEvent.type} timeline-dialog__event--${transitionPhase} timeline-dialog__event--intent-${transitionIntent}`}
               tabIndex={-1}
               aria-describedby="timeline-date"
             >
@@ -198,8 +314,13 @@ export default function TimelineDialog({ tree, onClose }: TimelineDialogProps) {
                 className="button button--ghost"
                 type="button"
                 aria-label={t('timeline.previous')}
-                disabled={currentIndex === 0}
-                onClick={() => navigateTo(currentIndex - 1)}
+                disabled={currentIndex === 0 || transitionPhase !== 'idle'}
+                onClick={() =>
+                  moveToIndex(currentIndex - 1, 'prev', {
+                    pausePlayback: true,
+                    announce: true,
+                  })
+                }
               >
                 {t('timeline.previous')}
               </button>
@@ -217,8 +338,15 @@ export default function TimelineDialog({ tree, onClose }: TimelineDialogProps) {
                 className="button button--ghost"
                 type="button"
                 aria-label={t('timeline.next')}
-                disabled={currentIndex === lastIndex}
-                onClick={() => navigateTo(currentIndex + 1)}
+                disabled={
+                  currentIndex === lastIndex || transitionPhase !== 'idle'
+                }
+                onClick={() =>
+                  moveToIndex(currentIndex + 1, 'next', {
+                    pausePlayback: true,
+                    announce: true,
+                  })
+                }
               >
                 {t('timeline.next')}
               </button>

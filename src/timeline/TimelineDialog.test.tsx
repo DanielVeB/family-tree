@@ -1,4 +1,11 @@
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TimelineDialog from './TimelineDialog'
 import type { FamilyTree } from '../model/tree'
@@ -31,7 +38,7 @@ afterEach(() => {
 })
 
 describe('TimelineDialog', () => {
-  it('starts paused, navigates with buttons and arrow keys, and restores focus on close', () => {
+  it('starts paused, navigates with buttons and arrow keys, and restores focus on close', async () => {
     const opener = document.createElement('button')
     document.body.append(opener)
     opener.focus()
@@ -46,15 +53,15 @@ describe('TimelineDialog', () => {
     expect(document.activeElement).toHaveClass('timeline-dialog__event')
 
     fireEvent.keyDown(dialog, { key: 'ArrowRight' })
-    expect(screen.getByText('Death of Jan')).toBeInTheDocument()
+    await screen.findByText('Death of Jan')
     expect(screen.getByText('2020')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
 
     fireEvent.keyDown(dialog, { key: 'ArrowLeft' })
-    expect(screen.getByText('Birth of Anna')).toBeInTheDocument()
+    await screen.findByText('Birth of Anna')
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    expect(screen.getByText('Death of Jan')).toBeInTheDocument()
+    await screen.findByText('Death of Jan')
     expect(onClose).not.toHaveBeenCalled()
 
     fireEvent.keyDown(dialog, { key: 'Escape' })
@@ -70,12 +77,15 @@ describe('TimelineDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Play' }))
 
     act(() => vi.advanceTimersByTime(5000))
+    act(() => vi.advanceTimersByTime(260))
     expect(screen.getByText('Death of Jan')).toBeInTheDocument()
     act(() => vi.advanceTimersByTime(5000))
+    act(() => vi.advanceTimersByTime(260))
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
     expect(screen.getByText('2 of 2')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    act(() => vi.advanceTimersByTime(400))
     expect(screen.getByText('Birth of Anna')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
   })
@@ -125,5 +135,16 @@ describe('TimelineDialog', () => {
     rerender(<TimelineDialog tree={tree} onClose={onClose} />)
     expect(screen.getByText('Narodziny: Anna')).toBeInTheDocument()
     expect(screen.getByText('styczeń 1987')).toBeInTheDocument()
+  })
+
+  it('applies advanced transition classes during navigation', async () => {
+    render(<TimelineDialog tree={tree} onClose={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await waitFor(() => {
+      const event = document.querySelector('.timeline-dialog__event')
+      expect(event).toBeTruthy()
+      expect(event).toHaveClass('timeline-dialog__event--entering')
+      expect(event).toHaveClass('timeline-dialog__event--intent-next')
+    })
   })
 })
