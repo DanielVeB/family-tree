@@ -290,6 +290,7 @@ function App() {
     savedAt: Date
   } | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showHeaderActionsMenu, setShowHeaderActionsMenu] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
@@ -297,6 +298,8 @@ function App() {
   const exportButtonRef = useRef<HTMLButtonElement>(null)
   const exportMenuButtonRef = useRef<HTMLButtonElement>(null)
   const exportMenuRef = useRef<HTMLDivElement>(null)
+  const headerActionsMenuButtonRef = useRef<HTMLButtonElement>(null)
+  const headerActionsMenuRef = useRef<HTMLDivElement>(null)
   const exportBusyRef = useRef(false)
   const exportToastTimeoutRef = useRef<number | null>(null)
   const focusAfterTreeActionRef = useRef<'delete' | 'undo' | null>(null)
@@ -385,6 +388,40 @@ function App() {
       window.removeEventListener('keydown', closeOnEscape)
     }
   }, [showExportMenu])
+
+  useEffect(() => {
+    if (!showHeaderActionsMenu) return
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !headerActionsMenuRef.current?.contains(event.target)
+      ) {
+        setShowHeaderActionsMenu(false)
+      }
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowHeaderActionsMenu(false)
+        headerActionsMenuButtonRef.current?.focus()
+      }
+    }
+    window.addEventListener('pointerdown', closeOnOutsideClick)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', closeOnOutsideClick)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [showHeaderActionsMenu])
+
+  const openImportPicker = useCallback(() => {
+    setShowHeaderActionsMenu(false)
+    importInputRef.current?.click()
+  }, [])
+
+  const openDriveLinkDialog = useCallback(() => {
+    setShowHeaderActionsMenu(false)
+    setShowDriveLinkDialog(true)
+  }, [])
 
   const changeLanguage = (language: 'en' | 'pl') => {
     window.localStorage.setItem('family-tree-language', language)
@@ -872,7 +909,13 @@ function App() {
 
   const cancelImportConfirmation = useCallback(() => {
     setPendingImport(null)
-    window.requestAnimationFrame(() => importButtonRef.current?.focus())
+    window.requestAnimationFrame(() => {
+      if (window.innerWidth < 640) {
+        headerActionsMenuButtonRef.current?.focus()
+      } else {
+        importButtonRef.current?.focus()
+      }
+    })
   }, [])
 
   const statusText =
@@ -925,7 +968,7 @@ function App() {
                 className="button button--ghost import-button import-button--file"
                 type="button"
                 aria-label={t('importButtonLabel')}
-                onClick={() => importInputRef.current?.click()}
+                onClick={openImportPicker}
               >
                 {t('importButton')}
               </button>
@@ -933,7 +976,7 @@ function App() {
                 className="button button--ghost import-button drive-link-button"
                 type="button"
                 aria-label={t('driveLink.openButtonLabel')}
-                onClick={() => setShowDriveLinkDialog(true)}
+                onClick={openDriveLinkDialog}
               >
                 {t('driveLink.openButton')}
               </button>
@@ -996,6 +1039,83 @@ function App() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+          {hasTree && (
+            <div className="top-bar__mobile-actions" ref={headerActionsMenuRef}>
+              <button
+                ref={headerActionsMenuButtonRef}
+                className="icon-pill top-bar__menu-trigger"
+                type="button"
+                aria-label={t('headerActionsMenuLabel')}
+                aria-expanded={showHeaderActionsMenu}
+                aria-controls={
+                  showHeaderActionsMenu ? 'header-actions-menu' : undefined
+                }
+                onClick={() => {
+                  setShowExportMenu(false)
+                  setShowHeaderActionsMenu((open) => !open)
+                }}
+              >
+                <span aria-hidden="true">☰</span>
+              </button>
+              {showHeaderActionsMenu && (
+                <div
+                  className="panel top-bar__mobile-menu"
+                  id="header-actions-menu"
+                >
+                  <p className="top-bar__mobile-menu-status">{statusText}</p>
+                  <p className="top-bar__mobile-menu-source">
+                    {sourceText}
+                    {driveConnectionText ? ` · ${driveConnectionText}` : ''}
+                  </p>
+                  <button
+                    className="export-menu__item"
+                    type="button"
+                    onClick={openImportPicker}
+                  >
+                    {t('importButton')}
+                  </button>
+                  <button
+                    className="export-menu__item"
+                    type="button"
+                    onClick={openDriveLinkDialog}
+                  >
+                    {t('driveLink.openButton')}
+                  </button>
+                  <button
+                    className="export-menu__item"
+                    type="button"
+                    disabled={exportBusy}
+                    onClick={() => {
+                      setShowHeaderActionsMenu(false)
+                      void saveTree()
+                    }}
+                  >
+                    {state.driveSource ? t('driveSaveButton') : t('exportButton')}
+                  </button>
+                  <button
+                    className="export-menu__item"
+                    type="button"
+                    onClick={() => {
+                      setShowHeaderActionsMenu(false)
+                      setShowTimeline(true)
+                    }}
+                  >
+                    {t('timeline.open')}
+                  </button>
+                  <button
+                    className="export-menu__item"
+                    type="button"
+                    onClick={() => {
+                      setShowHeaderActionsMenu(false)
+                      exportTree(true)
+                    }}
+                  >
+                    {state.driveSource ? t('exportLocalAs') : t('exportAs')}
+                  </button>
+                </div>
+              )}
             </div>
           )}
           <div

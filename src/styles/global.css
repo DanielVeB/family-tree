@@ -107,6 +107,37 @@ a:focus-visible {
   position: relative;
 }
 
+.top-bar__mobile-actions {
+  position: relative;
+  display: none;
+}
+
+.top-bar__menu-trigger {
+  font-size: 18px;
+}
+
+.top-bar__mobile-menu {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(280px, calc(100vw - 24px));
+  padding: 8px;
+}
+
+.top-bar__mobile-menu-status,
+.top-bar__mobile-menu-source {
+  margin: 0 8px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.top-bar__mobile-menu-source {
+  margin-bottom: 8px;
+}
+
 .export-menu {
   position: absolute;
   z-index: 10;
@@ -1705,6 +1736,14 @@ h1 {
     gap: 4px;
   }
 
+  .export-controls {
+    display: none;
+  }
+
+  .top-bar__mobile-actions {
+    display: block;
+  }
+
   .export-status,
   .export-source {
     position: absolute;
@@ -1715,17 +1754,6 @@ h1 {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     clip-path: inset(50%);
-  }
-
-  .timeline-button {
-    width: 44px;
-    padding: 0;
-    font-size: 0;
-  }
-
-  .timeline-button::before {
-    font-size: 20px;
-    content: '◷';
   }
 
   .export-toast {
