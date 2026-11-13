@@ -922,7 +922,7 @@ function App() {
               </span>
               <button
                 ref={importButtonRef}
-                className="button button--ghost import-button"
+                className="button button--ghost import-button import-button--file"
                 type="button"
                 aria-label={t('importButtonLabel')}
                 onClick={() => importInputRef.current?.click()}
@@ -930,7 +930,7 @@ function App() {
                 {t('importButton')}
               </button>
               <button
-                className="button button--ghost import-button"
+                className="button button--ghost import-button drive-link-button"
                 type="button"
                 aria-label={t('driveLink.openButtonLabel')}
                 onClick={() => setShowDriveLinkDialog(true)}
@@ -999,29 +999,6 @@ function App() {
             </div>
           )}
           <div
-            className="orientation-toggle"
-            role="group"
-            aria-label={t('orientation.label')}
-          >
-            <button
-              type="button"
-              aria-label={t('orientation.vertical')}
-              aria-pressed={orientation === 'vertical'}
-              onClick={() => changeOrientation('vertical')}
-            >
-              {t('orientation.verticalShort')}
-            </button>
-            <span aria-hidden="true">|</span>
-            <button
-              type="button"
-              aria-label={t('orientation.horizontal')}
-              aria-pressed={orientation === 'horizontal'}
-              onClick={() => changeOrientation('horizontal')}
-            >
-              {t('orientation.horizontalShort')}
-            </button>
-          </div>
-          <div
             className="language-toggle"
             role="group"
             aria-label={t('language')}
@@ -1085,6 +1062,7 @@ function App() {
             key={state.viewKey}
             tree={state.tree}
             orientation={orientation}
+            onChangeOrientation={changeOrientation}
             selectedId={state.selectedId}
             onSelect={(selectedId) => dispatch({ type: 'select', selectedId })}
             onAddRelative={createRelative}

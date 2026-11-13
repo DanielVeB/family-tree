@@ -54,6 +54,7 @@ import {
 interface TreeViewProps {
   tree: FamilyTree
   orientation: LayoutOrientation
+  onChangeOrientation: (orientation: LayoutOrientation) => void
   selectedId: string | null
   onSelect: (id: string | null) => void
   onAddRelative: (
@@ -102,6 +103,7 @@ const maxZoom = 2
 export default function TreeView({
   tree,
   orientation,
+  onChangeOrientation,
   selectedId,
   onSelect,
   onAddRelative,
@@ -1337,6 +1339,28 @@ export default function TreeView({
           >
             ↔
           </button>
+          <div
+            className="canvas-controls__orientation"
+            role="group"
+            aria-label={t('orientation.label')}
+          >
+            <button
+              type="button"
+              aria-label={t('orientation.vertical')}
+              aria-pressed={orientation === 'vertical'}
+              onClick={() => onChangeOrientation('vertical')}
+            >
+              {t('orientation.verticalShort')}
+            </button>
+            <button
+              type="button"
+              aria-label={t('orientation.horizontal')}
+              aria-pressed={orientation === 'horizontal'}
+              onClick={() => onChangeOrientation('horizontal')}
+            >
+              {t('orientation.horizontalShort')}
+            </button>
+          </div>
         </div>
       </div>
 

@@ -81,11 +81,11 @@ a:focus-visible {
 
 .top-bar {
   display: flex;
-  min-height: calc(64px + env(safe-area-inset-top));
+  min-height: calc(56px + env(safe-area-inset-top));
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: calc(12px + env(safe-area-inset-top)) 24px 12px;
+  gap: 12px;
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -93,14 +93,14 @@ a:focus-visible {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .export-controls {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+  flex-wrap: nowrap;
+  gap: 8px;
 }
 
 .export-more {
@@ -252,30 +252,6 @@ a:focus-visible {
   align-items: center;
   gap: 6px;
   color: var(--muted);
-}
-
-.orientation-toggle {
-  display: inline-flex;
-  min-height: 44px;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-}
-
-.orientation-toggle button {
-  min-width: 44px;
-  min-height: 44px;
-  padding: 8px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.orientation-toggle button[aria-pressed='true'] {
-  color: var(--oak);
-  font-weight: 600;
 }
 
 .language-toggle button {
@@ -657,6 +633,36 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.canvas-controls__orientation {
+  display: inline-flex;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--cream);
+  overflow: hidden;
+}
+
+.canvas-controls__orientation button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.canvas-controls__orientation button + button {
+  border-left: 1px solid var(--border);
+}
+
+.canvas-controls__orientation button[aria-pressed='true'] {
+  background: var(--tint-hover);
+  color: var(--oak);
+  font-weight: 600;
 }
 
 .node-actions {
@@ -1675,11 +1681,11 @@ h1 {
 }
 
 @media (hover: hover) {
-  .orientation-toggle button:hover:not([aria-pressed='true']) {
+  .language-toggle button:hover:not([aria-pressed='true']) {
     background: var(--tint-hover);
   }
 
-  .language-toggle button:hover:not([aria-pressed='true']) {
+  .canvas-controls__orientation button:hover:not([aria-pressed='true']) {
     background: var(--tint-hover);
   }
 
@@ -1691,8 +1697,7 @@ h1 {
 @media (max-width: 639px) {
   .top-bar {
     gap: 8px;
-    padding-right: 16px;
-    padding-left: 16px;
+    padding-top: calc(8px + env(safe-area-inset-top));
   }
 
   .top-bar__actions,
@@ -1700,7 +1705,8 @@ h1 {
     gap: 4px;
   }
 
-  .export-status {
+  .export-status,
+  .export-source {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -1770,7 +1776,7 @@ h1 {
   }
 }
 
-@media (max-width: 400px) {
+@media (max-width: 359px) {
   .wordmark {
     font-size: 14px;
   }
@@ -1784,7 +1790,9 @@ h1 {
   }
 
   .import-button,
-  .export-button {
+  .drive-link-button,
+  .export-button,
+  .timeline-button {
     width: 44px;
     padding: 0;
     font-size: 0;
@@ -1792,11 +1800,16 @@ h1 {
 
   .import-button::before {
     font-size: 20px;
-    content: '↑';
+    content: '⤓';
+  }
+
+  .drive-link-button::before {
+    font-size: 18px;
+    content: '⌁';
   }
 
   .export-button::before {
     font-size: 20px;
-    content: '↓';
+    content: '⤒';
   }
 }

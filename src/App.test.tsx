@@ -28,9 +28,11 @@ describe('start tree and add a relative', () => {
   })
 
   it('uses responsive orientation defaults when no saved preference exists', async () => {
+    const user = userEvent.setup()
     window.localStorage.removeItem('family-tree-orientation')
     setViewportWidth(500)
     render(<App />)
+    await startTree(user, 'Anna')
     expect(screen.getByRole('button', { name: 'Vertical view' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -43,6 +45,7 @@ describe('start tree and add a relative', () => {
     window.localStorage.removeItem('family-tree-orientation')
     setViewportWidth(900)
     render(<App />)
+    await startTree(user, 'Mia')
     expect(
       screen.getByRole('button', { name: 'Horizontal view' }),
     ).toHaveAttribute('aria-pressed', 'true')
@@ -80,6 +83,7 @@ describe('start tree and add a relative', () => {
 
     cleanup()
     render(<App />)
+    await startTree(user, 'Ava')
     expect(
       screen.getByRole('button', { name: 'Horizontal view' }),
     ).toHaveAttribute('aria-pressed', 'true')
@@ -1401,6 +1405,13 @@ function makeFile(
   })
   Object.defineProperty(file, 'text', { value: readText })
   return file
+}
+
+async function startTree(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(screen.getByRole('button', { name: 'Start a new tree' }))
+  await user.type(screen.getByLabelText('First name'), name)
+  await user.click(screen.getByRole('button', { name: 'Create tree' }))
+  await screen.findByRole('button', { name })
 }
 
 function setViewportWidth(width: number) {
